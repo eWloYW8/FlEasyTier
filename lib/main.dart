@@ -14,12 +14,13 @@ void main() async {
 
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
+    await windowManager.setPreventClose(true);
     const options = WindowOptions(
       size: Size(1100, 720),
       minimumSize: Size(480, 520),
       center: true,
       title: 'FlEasyTier',
-      titleBarStyle: TitleBarStyle.normal,
+      titleBarStyle: TitleBarStyle.hidden,
     );
     windowManager.waitUntilReadyToShow(options, () async {
       await windowManager.show();

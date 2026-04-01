@@ -72,6 +72,11 @@ class SettingsScreen extends StatelessWidget {
                 selected: state.seedColor,
                 onChanged: (c) => state.setSeedColor(c),
               ),
+              const SizedBox(height: 20),
+              _SchemeVariantPicker(
+                selected: state.schemeVariant,
+                onChanged: state.setSchemeVariant,
+              ),
             ],
           ),
 
@@ -90,6 +95,33 @@ class SettingsScreen extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                 ),
               ],
+            ],
+          ),
+
+          _SettingsCard(
+            icon: Icons.receipt_long_outlined,
+            title: 'Logs',
+            children: [
+              _IntField(
+                label: 'Auto-clear oversized logs (MB)',
+                value: state.logAutoClearSizeMb,
+                onChanged: state.setLogAutoClearSizeMb,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                label: const Text('Clear local logs'),
+                onPressed: () async {
+                  final cleared = await state.clearLocalLogs();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Cleared $cleared log file(s)'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
             ],
           ),
 
@@ -262,6 +294,38 @@ class _ColorPicker extends StatelessWidget {
   }
 }
 
+class _SchemeVariantPicker extends StatelessWidget {
+  const _SchemeVariantPicker({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final DynamicSchemeVariant selected;
+  final ValueChanged<DynamicSchemeVariant> onChanged;
+
+  static const _variants = [
+    DynamicSchemeVariant.tonalSpot,
+    DynamicSchemeVariant.content,
+    DynamicSchemeVariant.neutral,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _variants.map((variant) {
+        return ChoiceChip(
+          label: Text(AppState.schemeVariantLabel(variant)),
+          selected: selected == variant,
+          onSelected: (_) => onChanged(variant),
+          visualDensity: VisualDensity.compact,
+        );
+      }).toList(),
+    );
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Path field
 // ═══════════════════════════════════════════════════════════════════════════
@@ -374,5 +438,87 @@ class _PathFieldState extends State<_PathField> {
       composing: TextRange.empty,
     );
     _commit();
+  }
+}
+
+class _IntField extends StatefulWidget {
+  const _IntField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_IntField> createState() => _IntFieldState();
+}
+
+class _IntFieldState extends State<_IntField> {
+  late TextEditingController _ctrl;
+  late FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.value.toString());
+    _focusNode = FocusNode()
+      ..addListener(() {
+        if (!_focusNode.hasFocus) {
+          _commit();
+        }
+      });
+  }
+
+  @override
+  void didUpdateWidget(_IntField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextValue = widget.value.toString();
+    if (_focusNode.hasFocus) return;
+    if (_ctrl.text != nextValue) {
+      _ctrl.value = _ctrl.value.copyWith(
+        text: nextValue,
+        selection: TextSelection.collapsed(offset: nextValue.length),
+        composing: TextRange.empty,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _ctrl,
+      focusNode: _focusNode,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      onSubmitted: (_) => _commit(),
+    );
+  }
+
+  void _commit() {
+    final parsed = int.tryParse(_ctrl.text.trim()) ?? widget.value;
+    final normalized = parsed < 0 ? 0 : parsed;
+    final nextText = normalized.toString();
+    if (_ctrl.text != nextText) {
+      _ctrl.value = _ctrl.value.copyWith(
+        text: nextText,
+        selection: TextSelection.collapsed(offset: nextText.length),
+        composing: TextRange.empty,
+      );
+    }
+    widget.onChanged(normalized);
   }
 }

@@ -12,6 +12,12 @@ import '../services/easytier_manager.dart';
 import '../services/platform_vpn.dart';
 
 class AppState extends ChangeNotifier {
+  static const supportedSchemeVariants = <DynamicSchemeVariant>[
+    DynamicSchemeVariant.tonalSpot,
+    DynamicSchemeVariant.content,
+    DynamicSchemeVariant.neutral,
+  ];
+
   final ConfigStorage _storage = ConfigStorage();
   final EasyTierManager _manager = EasyTierManager();
   Timer? _pollTimer;
@@ -21,16 +27,23 @@ class AppState extends ChangeNotifier {
   String? _selectedConfigId;
   ThemeMode _themeMode = ThemeMode.system;
   Color _seedColor = const Color(0xFF00897B);
+  DynamicSchemeVariant _schemeVariant = DynamicSchemeVariant.tonalSpot;
   bool _closeToTray = false;
+  int _logAutoClearSizeMb = 10;
   final List<AppLogEntry> _appLogs = [];
+  final StreamController<AppLogEntry> _errorLogController =
+      StreamController<AppLogEntry>.broadcast();
 
   List<NetworkConfig> get configs => _configs;
   Map<String, NetworkInstance> get instances => _instances;
   String? get selectedConfigId => _selectedConfigId;
   ThemeMode get themeMode => _themeMode;
   Color get seedColor => _seedColor;
+  DynamicSchemeVariant get schemeVariant => _schemeVariant;
   bool get closeToTray => _closeToTray;
+  int get logAutoClearSizeMb => _logAutoClearSizeMb;
   List<AppLogEntry> get appLogs => List.unmodifiable(_appLogs);
+  Stream<AppLogEntry> get errorLogStream => _errorLogController.stream;
   EasyTierManager get manager => _manager;
   bool get canEditCoreBinaryPath =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -70,12 +83,34 @@ class AppState extends ChangeNotifier {
             settings['theme_mode'] as int? ?? 0) ??
         ThemeMode.system;
     _seedColor = Color(settings['seed_color'] as int? ?? 0xFF00897B);
+    final savedSchemeVariant = DynamicSchemeVariant.values
+        .elementAtOrNull(settings['scheme_variant'] as int? ?? 2);
+    _schemeVariant = _normalizeSchemeVariant(savedSchemeVariant);
     _closeToTray = settings['close_to_tray'] as bool? ?? false;
+    _logAutoClearSizeMb =
+        (settings['log_auto_clear_size_mb'] as int? ?? 10).clamp(0, 10240);
 
     await _manager.init();
     _manager.onLog = addLog;
+    final clearedLogs = await _manager.clearOversizedLocalLogs(
+      _configs,
+      maxBytes: _logAutoClearSizeMb * 1024 * 1024,
+    );
+    if (clearedLogs.clearedFiles > 0) {
+      addLog(
+        AppLogLevel.info,
+        'Auto-cleared ${clearedLogs.clearedFiles} oversized log file(s)',
+        category: 'Logs',
+        detail:
+            '${clearedLogs.clearedBytes ~/ (1024 * 1024)} MB reclaimed',
+      );
+    }
     await _manager.detectBinaries();
     _manager.onInstanceStopped = _onInstanceExit;
+
+    if (savedSchemeVariant != _schemeVariant) {
+      unawaited(_saveSettings());
+    }
 
     if (_configs.isNotEmpty) {
       _selectedConfigId = _configs.first.id;
@@ -281,12 +316,14 @@ class AppState extends ChangeNotifier {
     if (_supportsSystemService && config.serviceEnabled) {
       final msg = await _manager.startService(config);
       if (!_isSuccessMessage(msg)) {
-        addLog(
-          AppLogLevel.error,
-          'Service start failed for ${config.displayName}',
-          category: 'Service',
-          detail: msg,
+        final inst = _instances.putIfAbsent(
+          configId,
+          () => NetworkInstance(configId: configId),
         );
+        inst.running = false;
+        inst.managedByService = true;
+        inst.errorMessage = msg;
+        notifyListeners();
         return msg;
       }
 
@@ -343,12 +380,7 @@ class AppState extends ChangeNotifier {
       inst.managedByService = false;
       inst.errorMessage = err;
       if (PlatformVpn.needsSystemVpn) await PlatformVpn.stopVpn();
-      addLog(
-        AppLogLevel.error,
-        'Failed to start ${config.displayName}',
-        category: 'Instance',
-        detail: err,
-      );
+      notifyListeners();
       return err;
     }
 
@@ -389,12 +421,6 @@ class AppState extends ChangeNotifier {
       final msg = await _manager.stopService(config);
       if (!_isSuccessMessage(msg)) {
         inst?.errorMessage = msg;
-        addLog(
-          AppLogLevel.error,
-          'Service stop failed for ${config.displayName}',
-          category: 'Service',
-          detail: msg,
-        );
         notifyListeners();
         return;
       }
@@ -438,13 +464,6 @@ class AppState extends ChangeNotifier {
         'Installed service for ${config.displayName}',
         category: 'Service',
       );
-    } else {
-      addLog(
-        AppLogLevel.error,
-        'Service install failed for ${config.displayName}',
-        category: 'Service',
-        detail: msg,
-      );
     }
     return msg;
   }
@@ -464,13 +483,6 @@ class AppState extends ChangeNotifier {
         AppLogLevel.info,
         'Uninstalled service for ${config.displayName}',
         category: 'Service',
-      );
-    } else {
-      addLog(
-        AppLogLevel.error,
-        'Service uninstall failed for ${config.displayName}',
-        category: 'Service',
-        detail: msg,
       );
     }
     return msg;
@@ -569,6 +581,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setSchemeVariant(DynamicSchemeVariant variant) {
+    _schemeVariant = _normalizeSchemeVariant(variant);
+    addLog(
+      AppLogLevel.info,
+      'Color scheme changed to ${schemeVariantLabel(_schemeVariant)}',
+      category: 'UI',
+    );
+    unawaited(_saveSettings());
+    notifyListeners();
+  }
+
   void setCloseToTray(bool value) {
     _closeToTray = value;
     addLog(
@@ -594,24 +617,51 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLogAutoClearSizeMb(int value) {
+    final normalized = value.clamp(0, 10240);
+    _logAutoClearSizeMb = normalized;
+    addLog(
+      AppLogLevel.info,
+      normalized == 0
+          ? 'Disabled automatic oversized log cleanup'
+          : 'Set oversized log cleanup threshold to ${normalized}MB',
+      category: 'Logs',
+    );
+    unawaited(_saveSettings());
+    notifyListeners();
+  }
+
+  Future<int> clearLocalLogs() async {
+    final result = await _manager.clearAllLocalLogs(_configs);
+    addLog(
+      AppLogLevel.info,
+      'Cleared ${result.clearedFiles} local log file(s)',
+      category: 'Logs',
+      detail: '${result.clearedBytes ~/ 1024} KB removed',
+    );
+    notifyListeners();
+    return result.clearedFiles;
+  }
+
   void addLog(
     AppLogLevel level,
     String message, {
     String category = 'App',
     String? detail,
   }) {
-    _appLogs.insert(
-      0,
-      AppLogEntry(
-        timestamp: DateTime.now(),
-        level: level,
-        category: category,
-        message: message,
-        detail: detail,
-      ),
+    final entry = AppLogEntry(
+      timestamp: DateTime.now(),
+      level: level,
+      category: category,
+      message: message,
+      detail: detail,
     );
+    _appLogs.insert(0, entry);
     if (_appLogs.length > 1200) {
       _appLogs.removeRange(1200, _appLogs.length);
+    }
+    if (level == AppLogLevel.error) {
+      _errorLogController.add(entry);
     }
     notifyListeners();
   }
@@ -635,7 +685,9 @@ class AppState extends ChangeNotifier {
         'core_binary_path': _manager.coreBinaryPath,
         'theme_mode': _themeMode.index,
         'seed_color': _seedColor.toARGB32(),
+        'scheme_variant': _schemeVariant.index,
         'close_to_tray': _closeToTray,
+        'log_auto_clear_size_mb': _logAutoClearSizeMb,
       });
 
   String? _normalizeBinaryPath(String? path) {
@@ -650,6 +702,28 @@ class AppState extends ChangeNotifier {
     return value.isEmpty ? null : value;
   }
 
+  static DynamicSchemeVariant _normalizeSchemeVariant(
+    DynamicSchemeVariant? variant,
+  ) {
+    if (supportedSchemeVariants.contains(variant)) {
+      return variant!;
+    }
+    return DynamicSchemeVariant.tonalSpot;
+  }
+
+  static String schemeVariantLabel(DynamicSchemeVariant variant) {
+    switch (_normalizeSchemeVariant(variant)) {
+      case DynamicSchemeVariant.tonalSpot:
+        return 'Balanced';
+      case DynamicSchemeVariant.content:
+        return 'Richer';
+      case DynamicSchemeVariant.neutral:
+        return 'Muted';
+      default:
+        return 'Balanced';
+    }
+  }
+
   bool get _supportsSystemService =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -661,6 +735,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _errorLogController.close();
     _manager.stopAll();
     super.dispose();
   }

@@ -13,6 +13,7 @@ dependencies:
   path_provider: ^2.1.5
   uuid: ^4.5.1
   window_manager: ^0.4.3
+  tray_manager: ^0.5.2
   toml: ^0.18.0
   file_picker: ^10.3.10
 
@@ -23,3 +24,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/tray_icon.ico
+    - assets/tray_icon.png

@@ -107,6 +107,8 @@ class _PeerSummary {
   String get hostname =>
       route?.hostname.isNotEmpty == true ? route!.hostname : 'Peer $peerId';
 
+  String get clientVersion => route?.version ?? '';
+
   String get primaryIp => route?.ipv4Addr ?? '';
 
   String get primarySortIp =>
@@ -136,11 +138,18 @@ class _PeerSummary {
 
   double get displayLossRate => primaryConn?.lossRate ?? 0;
 
-  String nextHopLabel(bool latencyFirstEnabled) {
+  String nextHopLabel(
+    bool latencyFirstEnabled,
+    Map<int, String> peerNames,
+  ) {
     if (route == null) return '-';
     final nextHop = route!.currentNextHopPeerId(latencyFirstEnabled);
     if (nextHop <= 0 || route!.currentCost(latencyFirstEnabled) <= 1) {
       return 'Direct';
+    }
+    final name = peerNames[nextHop];
+    if (name != null && name.isNotEmpty) {
+      return name;
     }
     return 'Peer $nextHop';
   }
@@ -182,7 +191,8 @@ class _PeerRowState extends State<_PeerRow> {
     final cs = Theme.of(context).colorScheme;
     final accent = s.route?.isDirect == true ? Colors.green : Colors.orange;
     final currentLatency = s.displayLatency(widget.latencyFirstEnabled);
-    final currentHop = s.nextHopLabel(widget.latencyFirstEnabled);
+    final currentHop =
+        s.nextHopLabel(widget.latencyFirstEnabled, widget.peerNames);
     final latencyFirstLabel =
         s.latencyFirstLabel(widget.latencyFirstEnabled, widget.peerNames);
 
@@ -238,6 +248,15 @@ class _PeerRowState extends State<_PeerRow> {
                                       color: cs.outline,
                                     ),
                                   ),
+                                  if (s.clientVersion.trim().isNotEmpty)
+                                    TextSpan(
+                                      text: '  ${s.clientVersion.trim()}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w400,
+                                        color: cs.outline,
+                                      ),
+                                    ),
                                 ],
                               ),
                               overflow: TextOverflow.ellipsis,

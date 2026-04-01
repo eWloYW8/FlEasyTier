@@ -209,12 +209,30 @@ class EasyTierManager {
     if (!logFile.existsSync()) return const [];
 
     try {
-      final lines = logFile.readAsLinesSync();
-      if (lines.length <= 500) return lines;
-      return lines.sublist(lines.length - 500);
+      return _readLogTail(logFile);
     } catch (_) {
       return const [];
     }
+  }
+
+  Future<LogCleanupResult> clearAllLocalLogs(List<NetworkConfig> configs) {
+    return _cleanupLocalLogs(
+      configs,
+      shouldClear: (_) => true,
+    );
+  }
+
+  Future<LogCleanupResult> clearOversizedLocalLogs(
+    List<NetworkConfig> configs, {
+    required int maxBytes,
+  }) {
+    if (maxBytes <= 0) {
+      return Future.value(const LogCleanupResult());
+    }
+    return _cleanupLocalLogs(
+      configs,
+      shouldClear: (file) => file.lengthSync() > maxBytes,
+    );
   }
 
   Future<String?> validateLocalStart(NetworkConfig config) async {
@@ -357,12 +375,14 @@ class EasyTierManager {
             'systemctl',
             ['start', '${serviceNameFor(config)}.service'],
             success: 'Service started',
+            allowPrivilegeRetry: true,
           );
         case ServiceBackend.openrc:
           return _runServiceCommand(
             'rc-service',
             [serviceNameFor(config), 'start'],
             success: 'Service started',
+            allowPrivilegeRetry: true,
           );
         case ServiceBackend.launchd:
           return _startLaunchdService(config);
@@ -396,12 +416,14 @@ class EasyTierManager {
             'systemctl',
             ['stop', '${serviceNameFor(config)}.service'],
             success: 'Service stopped',
+            allowPrivilegeRetry: true,
           );
         case ServiceBackend.openrc:
           return _runServiceCommand(
             'rc-service',
             [serviceNameFor(config), 'stop'],
             success: 'Service stopped',
+            allowPrivilegeRetry: true,
           );
         case ServiceBackend.launchd:
           return _stopLaunchdService(config);
@@ -525,6 +547,21 @@ class EasyTierManager {
     }
   }
 
+  Future<bool> _hasUnixRootPrivileges() async {
+    if (Platform.isWindows) return true;
+    try {
+      final result = await Process.run(
+        'id',
+        ['-u'],
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+      return result.exitCode == 0 && result.stdout.toString().trim() == '0';
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<String?> _detectBinaryInDir(String dir, String fileName) async {
     final path = '$dir/$fileName';
     if (await File(path).exists()) return path;
@@ -594,12 +631,12 @@ class EasyTierManager {
         'binPath=',
         binPath,
         'start=',
-        config.autoStart ? 'auto' : 'demand',
+        'auto',
         'DisplayName=',
         'FlEasyTier ${config.displayName}',
         'depend=',
         'rpcss/dnscache',
-      ]);
+      ], allowPrivilegeRetry: true);
       if (create.exitCode != 0) {
         return _errorMessage(create, fallback: 'failed to create service');
       }
@@ -610,12 +647,12 @@ class EasyTierManager {
         'binPath=',
         binPath,
         'start=',
-        config.autoStart ? 'auto' : 'demand',
+        'auto',
         'DisplayName=',
         'FlEasyTier ${config.displayName}',
         'depend=',
         'rpcss/dnscache',
-      ]);
+      ], allowPrivilegeRetry: true);
       if (update.exitCode != 0) {
         return _errorMessage(update, fallback: 'failed to update service');
       }
@@ -625,7 +662,7 @@ class EasyTierManager {
       'description',
       serviceName,
       'FlEasyTier managed EasyTier network ${config.displayName}',
-    ]);
+    ], allowPrivilegeRetry: true);
     if (description.exitCode != 0) {
       return _errorMessage(description, fallback: 'failed to set description');
     }
@@ -640,7 +677,7 @@ class EasyTierManager {
       '/d',
       _configDir,
       '/f',
-    ]);
+    ], allowPrivilegeRetry: true);
     if (reg.exitCode != 0) {
       return _errorMessage(reg, fallback: 'failed to set service work dir');
     }
@@ -662,7 +699,11 @@ class EasyTierManager {
       if (!_isSuccessMessage(stopMsg)) return stopMsg;
     }
 
-    final delete = await _run('sc.exe', ['delete', serviceName]);
+    final delete = await _run(
+      'sc.exe',
+      ['delete', serviceName],
+      allowPrivilegeRetry: true,
+    );
     if (delete.exitCode != 0) {
       return _errorMessage(delete, fallback: 'failed to uninstall service');
     }
@@ -673,7 +714,7 @@ class EasyTierManager {
       '/v',
       serviceName,
       '/f',
-    ]);
+    ], allowPrivilegeRetry: true);
     return 'Service uninstalled';
   }
 
@@ -687,7 +728,11 @@ class EasyTierManager {
       return 'Service is already running';
     }
 
-    final result = await _run('sc.exe', ['start', serviceName]);
+    final result = await _run(
+      'sc.exe',
+      ['start', serviceName],
+      allowPrivilegeRetry: true,
+    );
     if (result.exitCode != 0) {
       return _errorMessage(result, fallback: 'failed to start service');
     }
@@ -704,7 +749,11 @@ class EasyTierManager {
       return 'Service is already stopped';
     }
 
-    final result = await _run('sc.exe', ['stop', serviceName]);
+    final result = await _run(
+      'sc.exe',
+      ['stop', serviceName],
+      allowPrivilegeRetry: true,
+    );
     if (result.exitCode != 0) {
       return _errorMessage(result, fallback: 'failed to stop service');
     }
@@ -752,8 +801,29 @@ class EasyTierManager {
     final file = File(_systemdUnitPath(serviceName));
     final status = await _getSystemdServiceStatus(serviceName);
 
+    if (!await _hasUnixRootPrivileges()) {
+      final result = await _runElevatedShellScript([
+        "systemctl stop '$serviceName.service' >/dev/null 2>&1 || true",
+        "cat > '${_systemdUnitPath(serviceName)}' <<'EOF'",
+        _makeSystemdUnit(config),
+        'EOF',
+        'systemctl daemon-reload',
+        "systemctl enable '$serviceName.service'",
+      ].join('\n'));
+      if (result.exitCode != 0) {
+        return _errorMessage(result, fallback: 'failed to install systemd service');
+      }
+      return status == ManagedServiceStatus.notInstalled
+          ? 'Service installed'
+          : 'Service updated';
+    }
+
     if (status == ManagedServiceStatus.running) {
-      final stop = await _run('systemctl', ['stop', '$serviceName.service']);
+      final stop = await _run(
+        'systemctl',
+        ['stop', '$serviceName.service'],
+        allowPrivilegeRetry: true,
+      );
       if (stop.exitCode != 0) {
         return _errorMessage(stop, fallback: 'failed to stop running service');
       }
@@ -761,15 +831,19 @@ class EasyTierManager {
 
     await file.writeAsString(_makeSystemdUnit(config));
 
-    final reload = await _run('systemctl', ['daemon-reload']);
+    final reload = await _run(
+      'systemctl',
+      ['daemon-reload'],
+      allowPrivilegeRetry: true,
+    );
     if (reload.exitCode != 0) {
       return _errorMessage(reload, fallback: 'failed to reload systemd');
     }
 
     final enable = await _run('systemctl', [
-      config.autoStart ? 'enable' : 'disable',
+      'enable',
       '$serviceName.service',
-    ]);
+    ], allowPrivilegeRetry: true);
     if (enable.exitCode != 0) {
       return _errorMessage(enable, fallback: 'failed to update autostart');
     }
@@ -788,16 +862,41 @@ class EasyTierManager {
       return 'Service is not installed';
     }
 
-    await _run('systemctl', ['disable', '--now', unit]);
+    if (!await _hasUnixRootPrivileges()) {
+      final result = await _runElevatedShellScript([
+        "systemctl disable --now '$unit' >/dev/null 2>&1 || true",
+        "rm -f '${_systemdUnitPath(serviceName)}'",
+        'systemctl daemon-reload',
+        "systemctl reset-failed '$unit' >/dev/null 2>&1 || true",
+      ].join('\n'));
+      if (result.exitCode != 0) {
+        return _errorMessage(result, fallback: 'failed to uninstall systemd service');
+      }
+      return 'Service uninstalled';
+    }
+
+    await _run(
+      'systemctl',
+      ['disable', '--now', unit],
+      allowPrivilegeRetry: true,
+    );
     if (await file.exists()) {
       await file.delete();
     }
 
-    final reload = await _run('systemctl', ['daemon-reload']);
+    final reload = await _run(
+      'systemctl',
+      ['daemon-reload'],
+      allowPrivilegeRetry: true,
+    );
     if (reload.exitCode != 0) {
       return _errorMessage(reload, fallback: 'failed to reload systemd');
     }
-    await _run('systemctl', ['reset-failed', unit]);
+    await _run(
+      'systemctl',
+      ['reset-failed', unit],
+      allowPrivilegeRetry: true,
+    );
     return 'Service uninstalled';
   }
 
@@ -856,22 +955,43 @@ class EasyTierManager {
     final file = File('/etc/init.d/$serviceName');
     final status = await _getOpenRcServiceStatus(serviceName);
 
+    if (!await _hasUnixRootPrivileges()) {
+      final result = await _runElevatedShellScript([
+        "rc-service '$serviceName' stop >/dev/null 2>&1 || true",
+        "cat > '/etc/init.d/$serviceName' <<'EOF'",
+        _makeOpenRcScript(config),
+        'EOF',
+        "chmod 755 '/etc/init.d/$serviceName'",
+        "rc-update add '$serviceName' default",
+      ].join('\n'));
+      if (result.exitCode != 0) {
+        return _errorMessage(result, fallback: 'failed to install OpenRC service');
+      }
+      return status == ManagedServiceStatus.notInstalled
+          ? 'Service installed'
+          : 'Service updated';
+    }
+
     if (status == ManagedServiceStatus.running) {
-      final stop = await _run('rc-service', [serviceName, 'stop']);
+      final stop = await _run(
+        'rc-service',
+        [serviceName, 'stop'],
+        allowPrivilegeRetry: true,
+      );
       if (stop.exitCode != 0) {
         return _errorMessage(stop, fallback: 'failed to stop running service');
       }
     }
 
     await file.writeAsString(_makeOpenRcScript(config));
-    await _run('chmod', ['755', file.path]);
+    await _run('chmod', ['755', file.path], allowPrivilegeRetry: true);
 
     final autoResult = await _run('rc-update', [
-      config.autoStart ? 'add' : 'del',
+      'add',
       serviceName,
       'default',
-    ]);
-    if (autoResult.exitCode != 0 && config.autoStart) {
+    ], allowPrivilegeRetry: true);
+    if (autoResult.exitCode != 0) {
       return _errorMessage(autoResult, fallback: 'failed to update autostart');
     }
 
@@ -888,8 +1008,28 @@ class EasyTierManager {
       return 'Service is not installed';
     }
 
-    await _run('rc-service', [serviceName, 'stop']);
-    await _run('rc-update', ['del', serviceName, 'default']);
+    if (!await _hasUnixRootPrivileges()) {
+      final result = await _runElevatedShellScript([
+        "rc-service '$serviceName' stop >/dev/null 2>&1 || true",
+        "rc-update del '$serviceName' default >/dev/null 2>&1 || true",
+        "rm -f '/etc/init.d/$serviceName'",
+      ].join('\n'));
+      if (result.exitCode != 0) {
+        return _errorMessage(result, fallback: 'failed to uninstall OpenRC service');
+      }
+      return 'Service uninstalled';
+    }
+
+    await _run(
+      'rc-service',
+      [serviceName, 'stop'],
+      allowPrivilegeRetry: true,
+    );
+    await _run(
+      'rc-update',
+      ['del', serviceName, 'default'],
+      allowPrivilegeRetry: true,
+    );
     if (await file.exists()) {
       await file.delete();
     }
@@ -944,20 +1084,44 @@ class EasyTierManager {
     final plist = File(plistPath);
     final status = await _getLaunchdServiceStatus(config);
 
+    if (!await _hasUnixRootPrivileges()) {
+      final result = await _runElevatedShellScript([
+        "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
+        "cat > '$plistPath' <<'EOF'",
+        _makeLaunchdPlist(config),
+        'EOF',
+        "chmod 644 '$plistPath'",
+        "chown root:wheel '$plistPath'",
+        "launchctl bootstrap system '$plistPath'",
+      ].join('\n'));
+      if (result.exitCode != 0) {
+        return _errorMessage(result, fallback: 'failed to install launchd service');
+      }
+      return status == ManagedServiceStatus.notInstalled
+          ? 'Service installed'
+          : 'Service updated';
+    }
+
     if (status == ManagedServiceStatus.running) {
-      await _run('launchctl', ['bootout', 'system/${_launchdLabel(config)}']);
+      await _run(
+        'launchctl',
+        ['bootout', 'system/${_launchdLabel(config)}'],
+        allowPrivilegeRetry: true,
+      );
     }
 
     await plist.writeAsString(_makeLaunchdPlist(config));
-    await _run('chmod', ['644', plistPath]);
-    await _run('chown', ['root:wheel', plistPath]);
+    await _run('chmod', ['644', plistPath], allowPrivilegeRetry: true);
+    await _run('chown', ['root:wheel', plistPath], allowPrivilegeRetry: true);
 
-    if (config.autoStart) {
-      final bootstrap =
-          await _run('launchctl', ['bootstrap', 'system', plistPath]);
-      if (bootstrap.exitCode != 0) {
-        return _errorMessage(bootstrap, fallback: 'failed to bootstrap launchd service');
-      }
+    final bootstrap =
+        await _run(
+          'launchctl',
+          ['bootstrap', 'system', plistPath],
+          allowPrivilegeRetry: true,
+        );
+    if (bootstrap.exitCode != 0) {
+      return _errorMessage(bootstrap, fallback: 'failed to bootstrap launchd service');
     }
 
     return status == ManagedServiceStatus.notInstalled
@@ -969,8 +1133,24 @@ class EasyTierManager {
     final plistPath = _launchdPlistPath(config);
     final plist = File(plistPath);
     final status = await _getLaunchdServiceStatus(config);
+
+    if (!await _hasUnixRootPrivileges()) {
+      final result = await _runElevatedShellScript([
+        "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
+        "rm -f '$plistPath'",
+      ].join('\n'));
+      if (result.exitCode != 0) {
+        return _errorMessage(result, fallback: 'failed to uninstall launchd service');
+      }
+      return 'Service uninstalled';
+    }
+
     if (status != ManagedServiceStatus.notInstalled) {
-      await _run('launchctl', ['bootout', 'system/${_launchdLabel(config)}']);
+      await _run(
+        'launchctl',
+        ['bootout', 'system/${_launchdLabel(config)}'],
+        allowPrivilegeRetry: true,
+      );
     } else if (!await plist.exists()) {
       return 'Service is not installed';
     }
@@ -989,14 +1169,22 @@ class EasyTierManager {
     final label = _launchdLabel(config);
     final status = await _getLaunchdServiceStatus(config);
     if (status == ManagedServiceStatus.running) {
-      final kick = await _run('launchctl', ['kickstart', '-k', 'system/$label']);
+      final kick = await _run(
+        'launchctl',
+        ['kickstart', '-k', 'system/$label'],
+        allowPrivilegeRetry: true,
+      );
       if (kick.exitCode != 0) {
         return _errorMessage(kick, fallback: 'failed to restart service');
       }
       return 'Service started';
     }
 
-    final bootstrap = await _run('launchctl', ['bootstrap', 'system', plistPath]);
+    final bootstrap = await _run(
+      'launchctl',
+      ['bootstrap', 'system', plistPath],
+      allowPrivilegeRetry: true,
+    );
     if (bootstrap.exitCode != 0) {
       return _errorMessage(bootstrap, fallback: 'failed to start service');
     }
@@ -1013,7 +1201,11 @@ class EasyTierManager {
     }
 
     final result =
-        await _run('launchctl', ['bootout', 'system/${_launchdLabel(config)}']);
+        await _run(
+          'launchctl',
+          ['bootout', 'system/${_launchdLabel(config)}'],
+          allowPrivilegeRetry: true,
+        );
     if (result.exitCode != 0) {
       return _errorMessage(result, fallback: 'failed to stop service');
     }
@@ -1053,7 +1245,7 @@ class EasyTierManager {
       '    <false/>',
       '  </dict>',
       '  <key>RunAtLoad</key>',
-      config.autoStart ? '  <true/>' : '  <false/>',
+      '  <true/>',
       '</dict>',
       '</plist>',
       '',
@@ -1077,19 +1269,41 @@ class EasyTierManager {
     String command,
     List<String> args, {
     required String success,
+    bool allowPrivilegeRetry = false,
   }) async {
-    final result = await _run(command, args);
+    final result = await _run(
+      command,
+      args,
+      allowPrivilegeRetry: allowPrivilegeRetry,
+    );
     if (result.exitCode == 0) return success;
     return _errorMessage(result, fallback: 'command failed');
   }
 
-  Future<ProcessResult> _run(String command, List<String> args) {
-    return Process.run(
+  Future<ProcessResult> _run(
+    String command,
+    List<String> args, {
+    bool allowPrivilegeRetry = false,
+  }) async {
+    final result = await Process.run(
       command,
       args,
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
     );
+    if (allowPrivilegeRetry &&
+        Platform.isWindows &&
+        !await _isWindowsElevated() &&
+        _looksLikeWindowsPermissionError(result)) {
+      return _runWindowsElevated(command, args);
+    }
+    if (allowPrivilegeRetry &&
+        !Platform.isWindows &&
+        !await _hasUnixRootPrivileges() &&
+        _looksLikeUnixPermissionError(result)) {
+      return _runElevatedShellScript(_shellCommand(command, args));
+    }
+    return result;
   }
 
   String _mergedOutput(ProcessResult result) {
@@ -1115,6 +1329,215 @@ class EasyTierManager {
       detail: output.isNotEmpty ? output : null,
     );
     return message;
+  }
+
+  bool _looksLikeWindowsPermissionError(ProcessResult result) {
+    final output = _mergedOutput(result).toLowerCase();
+    return output.contains('access is denied') ||
+        output.contains('permission denied') ||
+        output.contains('openservice failed 5') ||
+        output.contains('error 5') ||
+        output.contains('requires administrator privileges');
+  }
+
+  bool _looksLikeUnixPermissionError(ProcessResult result) {
+    final output = _mergedOutput(result).toLowerCase();
+    return output.contains('permission denied') ||
+        output.contains('operation not permitted') ||
+        output.contains('not permitted') ||
+        output.contains('authentication is required') ||
+        output.contains('must be root') ||
+        output.contains('must be superuser');
+  }
+
+  String _shellCommand(String command, List<String> args) {
+    final escapedArgs = args.map(_shellEscape).join(' ');
+    return escapedArgs.isEmpty
+        ? _shellEscape(command)
+        : '${_shellEscape(command)} $escapedArgs';
+  }
+
+  Future<ProcessResult> _runElevatedShellScript(String scriptBody) async {
+    if (Platform.isWindows) {
+      return ProcessResult(
+        0,
+        1,
+        '',
+        'Elevated shell scripts are not supported on Windows by this helper',
+      );
+    }
+
+    final tempDir = await Directory.systemTemp.createTemp('fleasytier-elev-');
+    final scriptFile = File('${tempDir.path}${Platform.pathSeparator}run.sh');
+    final stdoutFile =
+        File('${tempDir.path}${Platform.pathSeparator}stdout.txt');
+    final stderrFile =
+        File('${tempDir.path}${Platform.pathSeparator}stderr.txt');
+    final exitFile = File('${tempDir.path}${Platform.pathSeparator}exit.txt');
+
+    await scriptFile.writeAsString([
+      '#!/bin/bash',
+      'set +e',
+      '{',
+      scriptBody,
+      "} >'${stdoutFile.path}' 2>'${stderrFile.path}'",
+      'code=\$?',
+      "printf '%s' \"\$code\" >'${exitFile.path}'",
+      'exit "\$code"',
+      '',
+    ].join('\n'));
+
+    try {
+      await Process.run('chmod', ['700', scriptFile.path]);
+    } catch (_) {}
+
+    ProcessResult launcher;
+    if (Platform.isLinux) {
+      final hasPkexec = await _commandExists('pkexec');
+      if (!hasPkexec) {
+        try {
+          await tempDir.delete(recursive: true);
+        } catch (_) {}
+        return ProcessResult(
+          0,
+          1,
+          '',
+          'pkexec is not available on this system',
+        );
+      }
+      launcher = await Process.run(
+        'pkexec',
+        ['/bin/bash', scriptFile.path],
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+    } else if (Platform.isMacOS) {
+      final command = '/bin/bash ${_shellEscape(scriptFile.path)}';
+      launcher = await Process.run(
+        'osascript',
+        [
+          '-e',
+          'do shell script "${_appleScriptEscape(command)}" with administrator privileges',
+        ],
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+    } else {
+      try {
+        await tempDir.delete(recursive: true);
+      } catch (_) {}
+      return ProcessResult(0, 1, '', 'Unsupported platform for elevation');
+    }
+
+    final stdout =
+        await stdoutFile.exists() ? await stdoutFile.readAsString() : '';
+    final stderr =
+        await stderrFile.exists() ? await stderrFile.readAsString() : '';
+    final exitCode = await exitFile.exists()
+        ? int.tryParse((await exitFile.readAsString()).trim()) ?? launcher.exitCode
+        : launcher.exitCode;
+
+    try {
+      await tempDir.delete(recursive: true);
+    } catch (_) {}
+
+    if (launcher.exitCode != 0 && exitCode == launcher.exitCode && stderr.isEmpty) {
+      return ProcessResult(
+        0,
+        launcher.exitCode,
+        stdout,
+        _mergedOutput(launcher),
+      );
+    }
+
+    return ProcessResult(0, exitCode, stdout, stderr);
+  }
+
+  Future<ProcessResult> _runWindowsElevated(
+    String command,
+    List<String> args,
+  ) async {
+    final baseDir = await Directory.systemTemp.createTemp('fleasytier-elev-');
+    final stdoutFile = File('${baseDir.path}\\stdout.txt');
+    final stderrFile = File('${baseDir.path}\\stderr.txt');
+    final exitFile = File('${baseDir.path}\\exit.txt');
+    final scriptFile = File('${baseDir.path}\\run.ps1');
+
+    final psCommand = _psSingleQuote(command);
+    final psArgs = args.map(_psSingleQuote).map((arg) => "'$arg'").join(', ');
+    final psStdout = _psSingleQuote(stdoutFile.path);
+    final psStderr = _psSingleQuote(stderrFile.path);
+    final psExit = _psSingleQuote(exitFile.path);
+
+    await scriptFile.writeAsString([
+      "\$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(\$false)",
+      "\$ErrorActionPreference = 'Continue'",
+      "\$stdoutPath = '$psStdout'",
+      "\$stderrPath = '$psStderr'",
+      "\$exitPath = '$psExit'",
+      "\$command = '$psCommand'",
+      "\$args = @($psArgs)",
+      "\$stdout = New-Object System.Collections.Generic.List[string]",
+      "\$stderr = New-Object System.Collections.Generic.List[string]",
+      "\$code = 0",
+      "try {",
+      "  & \$command @args 2>&1 | ForEach-Object {",
+      "    if (\$_ -is [System.Management.Automation.ErrorRecord]) {",
+      "      [void]\$stderr.Add(\$_.ToString())",
+      "    } else {",
+      "      [void]\$stdout.Add(\$_.ToString())",
+      "    }",
+      "  }",
+      "  if (\$LASTEXITCODE -ne \$null) { \$code = [int]\$LASTEXITCODE }",
+      "} catch {",
+      "  [void]\$stderr.Add(\$_.Exception.Message)",
+      "  \$code = 1",
+      "}",
+      "[System.IO.File]::WriteAllText(\$stdoutPath, (\$stdout -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new(\$false))",
+      "[System.IO.File]::WriteAllText(\$stderrPath, (\$stderr -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new(\$false))",
+      "[System.IO.File]::WriteAllText(\$exitPath, \$code.ToString(), [System.Text.UTF8Encoding]::new(\$false))",
+    ].join('\r\n'));
+
+    final launcher = await Process.run(
+      'powershell',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        "Start-Process powershell -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','${scriptFile.path.replaceAll("'", "''")}')",
+      ],
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+
+    if (launcher.exitCode != 0) {
+      final stderr = _mergedOutput(launcher);
+      return ProcessResult(
+        0,
+        launcher.exitCode,
+        '',
+        stderr.isNotEmpty ? stderr : 'Elevation request was cancelled or failed',
+      );
+    }
+
+    final stdout = await stdoutFile.exists() ? await stdoutFile.readAsString() : '';
+    final stderr = await stderrFile.exists() ? await stderrFile.readAsString() : '';
+    final exitCode = await exitFile.exists()
+        ? int.tryParse((await exitFile.readAsString()).trim()) ?? 1
+        : 1;
+
+    try {
+      await baseDir.delete(recursive: true);
+    } catch (_) {}
+
+    return ProcessResult(0, exitCode, stdout, stderr);
+  }
+
+  String _psSingleQuote(String value) => value.replaceAll("'", "''");
+
+  String _appleScriptEscape(String value) {
+    return value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
   }
 
   bool _isSuccessMessage(String msg) {
@@ -1159,6 +1582,96 @@ class EasyTierManager {
     await Directory(_effectiveServiceLogDir(config)).create(recursive: true);
   }
 
+  Future<LogCleanupResult> _cleanupLocalLogs(
+    List<NetworkConfig> configs, {
+    required bool Function(File file) shouldClear,
+  }) async {
+    final seenDirs = <String>{};
+    final targets = <Directory>[];
+
+    void addDir(String path) {
+      if (path.trim().isEmpty) return;
+      final normalized = Directory(path).absolute.path;
+      if (seenDirs.add(normalized)) {
+        targets.add(Directory(normalized));
+      }
+    }
+
+    addDir('$_configDir${Platform.pathSeparator}logs');
+    for (final config in configs) {
+      addDir(_effectiveServiceLogDir(config));
+    }
+
+    var clearedFiles = 0;
+    var clearedBytes = 0;
+
+    for (final dir in targets) {
+      if (!await dir.exists()) continue;
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is! File) continue;
+        try {
+          if (!shouldClear(entity)) continue;
+          final length = await entity.length();
+          await entity.writeAsBytes(const [], mode: FileMode.write);
+          clearedFiles += 1;
+          clearedBytes += length;
+        } catch (_) {
+          // Ignore files currently locked by the OS or service manager.
+        }
+      }
+    }
+
+    return LogCleanupResult(
+      clearedFiles: clearedFiles,
+      clearedBytes: clearedBytes,
+    );
+  }
+
+  List<String> _readLogTail(
+    File logFile, {
+    int maxLines = 500,
+    int maxBytes = 256 * 1024,
+  }) {
+    final raf = logFile.openSync(mode: FileMode.read);
+    try {
+      final length = raf.lengthSync();
+      if (length <= 0) return const [];
+
+      final readBytes = length < maxBytes ? length : maxBytes;
+      raf.setPositionSync(length - readBytes);
+      final bytes = raf.readSync(readBytes);
+      final start = _safeUtf8TailStart(bytes, truncated: length > readBytes);
+      final text = utf8.decode(bytes.sublist(start), allowMalformed: false);
+      final lines = const LineSplitter().convert(text);
+
+      if (lines.isEmpty) return const [];
+
+      if (lines.length <= maxLines) return lines;
+      return lines.sublist(lines.length - maxLines);
+    } finally {
+      raf.closeSync();
+    }
+  }
+
+  int _safeUtf8TailStart(List<int> bytes, {required bool truncated}) {
+    if (bytes.isEmpty) return 0;
+
+    if (truncated) {
+      for (var i = 0; i < bytes.length; i++) {
+        if (bytes[i] == 0x0A) {
+          final next = i + 1;
+          return next < bytes.length ? next : bytes.length;
+        }
+      }
+    }
+
+    var start = 0;
+    while (start < bytes.length && (bytes[start] & 0xC0) == 0x80) {
+      start += 1;
+    }
+    return start;
+  }
+
   String? _buildExitDetail(String configId, int exitCode) {
     if (exitCode == 0) return null;
 
@@ -1201,6 +1714,16 @@ class EasyTierManager {
     }
     return withoutAnsi;
   }
+}
+
+class LogCleanupResult {
+  const LogCleanupResult({
+    this.clearedFiles = 0,
+    this.clearedBytes = 0,
+  });
+
+  final int clearedFiles;
+  final int clearedBytes;
 }
 
 enum ManagedServiceStatus {
