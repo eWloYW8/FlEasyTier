@@ -12,8 +12,8 @@ import androidx.core.app.NotificationCompat
 class EasyTierVpnService : VpnService() {
 
     companion object {
-        const val ACTION_START = "com.easytier.START_VPN"
-        const val ACTION_STOP = "com.easytier.STOP_VPN"
+        const val ACTION_START = "com.ewloyw8.START_VPN"
+        const val ACTION_STOP = "com.ewloyw8.STOP_VPN"
         const val CHANNEL_ID = "easytier_vpn"
         const val NOTIFICATION_ID = 1
 
@@ -110,7 +110,7 @@ class EasyTierVpnService : VpnService() {
         startForeground(NOTIFICATION_ID, notification)
 
         // Notify Flutter via broadcast
-        val broadcastIntent = Intent("com.easytier.VPN_STATE_CHANGED")
+        val broadcastIntent = Intent("com.ewloyw8.VPN_STATE_CHANGED")
         broadcastIntent.putExtra("running", true)
         broadcastIntent.putExtra("fd", vpnFd)
         sendBroadcast(broadcastIntent)
@@ -124,7 +124,7 @@ class EasyTierVpnService : VpnService() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
 
-        val broadcastIntent = Intent("com.easytier.VPN_STATE_CHANGED")
+        val broadcastIntent = Intent("com.ewloyw8.VPN_STATE_CHANGED")
         broadcastIntent.putExtra("running", false)
         sendBroadcast(broadcastIntent)
     }
