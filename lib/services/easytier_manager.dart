@@ -20,6 +20,7 @@ typedef AppLogWriter = void Function(
 class EasyTierManager {
   String? coreBinaryPath;
   late String _configDir;
+  String? _coreVersionCache;
 
   final Map<String, Process> _processes = {};
   final Map<String, StreamSubscription<int>> _exitSubs = {};
@@ -45,6 +46,7 @@ class EasyTierManager {
   Future<void> detectBinaries() async {
     if (coreBinaryPath != null && !await File(coreBinaryPath!).exists()) {
       coreBinaryPath = null;
+      _coreVersionCache = null;
     }
 
     final ext = Platform.isWindows ? '.exe' : '';
@@ -90,6 +92,33 @@ class EasyTierManager {
       category: 'Binary',
       detail: coreBinaryPath,
     );
+  }
+
+  Future<String?> getCoreVersion() async {
+    if (coreBinaryPath == null) return null;
+    if (_coreVersionCache != null && _coreVersionCache!.trim().isNotEmpty) {
+      return _coreVersionCache;
+    }
+
+    for (final args in const [
+      ['--version'],
+      ['-V'],
+    ]) {
+      try {
+        final result = await Process.run(
+          coreBinaryPath!,
+          args,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+        final line = _firstMeaningfulLine(result);
+        if (line.isNotEmpty) {
+          _coreVersionCache = line;
+          return line;
+        }
+      } catch (_) {}
+    }
+    return null;
   }
 
   String get _exeDir {

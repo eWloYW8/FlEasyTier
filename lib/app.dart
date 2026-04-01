@@ -8,12 +8,41 @@ import 'package:window_manager/window_manager.dart';
 
 import 'models/app_log_entry.dart';
 import 'providers/app_state.dart';
+import 'screens/about_screen.dart';
 import 'screens/app_logs_screen.dart';
 import 'screens/networks_screen.dart';
 import 'screens/settings_screen.dart';
 
 class FlEasyTierApp extends StatelessWidget {
   const FlEasyTierApp({super.key});
+
+  ThemeData _buildTheme({
+    required Color seedColor,
+    required Brightness brightness,
+    required DynamicSchemeVariant dynamicSchemeVariant,
+  }) {
+    final theme = ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: seedColor,
+        brightness: brightness,
+        dynamicSchemeVariant: dynamicSchemeVariant,
+      ),
+      useMaterial3: true,
+    );
+
+    final cs = theme.colorScheme;
+    return theme.copyWith(
+      cardTheme: CardThemeData(
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: cs.outlineVariant),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,21 +51,15 @@ class FlEasyTierApp extends StatelessWidget {
       title: 'FlEasyTier',
       debugShowCheckedModeBanner: false,
       themeMode: appState.themeMode,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: appState.seedColor,
-          brightness: Brightness.light,
-          dynamicSchemeVariant: appState.schemeVariant,
-        ),
-        useMaterial3: true,
+      theme: _buildTheme(
+        seedColor: appState.seedColor,
+        brightness: Brightness.light,
+        dynamicSchemeVariant: appState.schemeVariant,
       ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: appState.seedColor,
-          brightness: Brightness.dark,
-          dynamicSchemeVariant: appState.schemeVariant,
-        ),
-        useMaterial3: true,
+      darkTheme: _buildTheme(
+        seedColor: appState.seedColor,
+        brightness: Brightness.dark,
+        dynamicSchemeVariant: appState.schemeVariant,
       ),
       home: const _AppShell(),
     );
@@ -236,6 +259,10 @@ class _MainShellState extends State<_MainShell>
             key: 'open_settings',
             label: 'Settings',
           ),
+          MenuItem(
+            key: 'open_about',
+            label: 'About',
+          ),
           MenuItem.separator(),
           MenuItem(
             key: 'start_all',
@@ -323,6 +350,9 @@ class _MainShellState extends State<_MainShell>
       case 'open_settings':
         unawaited(_openPage(2));
         return;
+      case 'open_about':
+        unawaited(_openPage(3));
+        return;
       case 'start_all':
         unawaited(_startAllNetworks());
         return;
@@ -401,6 +431,7 @@ class _MainShellState extends State<_MainShell>
       NetworksScreen(),
       AppLogsScreen(),
       SettingsScreen(),
+      AboutScreen(),
     ];
 
     final content = wide
@@ -432,6 +463,11 @@ class _MainShellState extends State<_MainShell>
                   selectedIcon: Icon(Icons.settings),
                   label: 'Settings',
                 ),
+                NavigationDestination(
+                  icon: Icon(Icons.info_outline),
+                  selectedIcon: Icon(Icons.info),
+                  label: 'About',
+                ),
               ],
             ),
           );
@@ -452,7 +488,8 @@ class _MainShellState extends State<_MainShell>
               pageTitle: switch (_index) {
                 0 => 'Networks',
                 1 => 'Logs',
-                _ => 'Settings',
+                2 => 'Settings',
+                _ => 'About',
               },
               isAlwaysOnTop: _isAlwaysOnTop,
               isMaximized: _isMaximized,
@@ -507,6 +544,11 @@ class _MainShellState extends State<_MainShell>
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: Text('Settings'),
+          ),
+          NavigationRailDestination(
+            icon: Icon(Icons.info_outline),
+            selectedIcon: Icon(Icons.info),
+            label: Text('About'),
           ),
         ],
       ),
