@@ -1,4 +1,4 @@
-package com.easytier.fleasytier
+package com.ewloyw8.fleasytier
 
 import android.app.Activity
 import android.content.Intent
@@ -10,7 +10,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     companion object {
-        private const val CHANNEL = "com.easytier.fleasytier/vpn"
+        private const val CHANNEL = "com.ewloyw8.fleasytier/vpn"
         private const val VPN_REQUEST_CODE = 0x0F
     }
 

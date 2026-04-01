@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.easytier" "\0"
-            VALUE "FileDescription", "fleasytier" "\0"
+            VALUE "FileDescription", "FlEasyTier" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "fleasytier" "\0"
+            VALUE "InternalName", "FlEasyTier" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.easytier. All rights reserved." "\0"
-            VALUE "OriginalFilename", "fleasytier.exe" "\0"
-            VALUE "ProductName", "fleasytier" "\0"
+            VALUE "OriginalFilename", "FlEasyTier.exe" "\0"
+            VALUE "ProductName", "FlEasyTier" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

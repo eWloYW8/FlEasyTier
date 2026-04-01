@@ -1242,7 +1242,7 @@ class EasyTierManager {
   }
 
   String _launchdLabel(NetworkConfig config) =>
-      'com.fleasytier.${serviceNameFor(config)}';
+      'com.ewloyw8.fleasytier.${serviceNameFor(config)}';
 
   String _launchdPlistPath(NetworkConfig config) =>
       '/Library/LaunchDaemons/${_launchdLabel(config)}.plist';

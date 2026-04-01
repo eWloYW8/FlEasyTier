@@ -1,4 +1,4 @@
-package com.easytier.fleasytier
+package com.ewloyw8.fleasytier
 
 import android.content.Intent
 import android.net.VpnService

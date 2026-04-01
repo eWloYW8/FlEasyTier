@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "fleasytier-${version}-windows-${{ matrix.arch }}.zip"
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "FlEasyTier-${version}-windows-${{ matrix.arch }}.zip"
 
       - name: Package Windows Setup
         if: matrix.platform == 'windows'
@@ -92,7 +92,7 @@ jobs:
         env:
           SOURCE_DIR: ${{ github.workspace }}\build\windows\x64\runner\Release
           OUTPUT_DIR: ${{ github.workspace }}
-          OUTPUT_FILENAME: fleasytier-${{ github.ref_name }}-windows-${{ matrix.arch }}-setup
+          OUTPUT_FILENAME: FlEasyTier-${{ github.ref_name }}-windows-${{ matrix.arch }}-setup
           ICON_FILE: ${{ github.workspace }}\windows\runner\resources\app_icon.ico
           APP_VERSION: ${{ github.ref_name }}
         run: |
@@ -103,20 +103,20 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cd build/linux/x64/release/bundle
-          tar -czf "${GITHUB_WORKSPACE}/fleasytier-${VERSION}-linux-${{ matrix.arch }}.tar.gz" .
+          tar -czf "${GITHUB_WORKSPACE}/FlEasyTier-${VERSION}-linux-${{ matrix.arch }}.tar.gz" .
 
       - name: Package macOS
         if: matrix.platform == 'macos'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cd build/macos/Build/Products/Release
-          zip -r "${GITHUB_WORKSPACE}/fleasytier-${VERSION}-macos-${{ matrix.arch }}.zip" fleasytier.app
+          zip -r "${GITHUB_WORKSPACE}/FlEasyTier-${VERSION}-macos-${{ matrix.arch }}.zip" FlEasyTier.app
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: artifact-${{ matrix.platform }}-${{ matrix.arch }}
-          path: fleasytier-*
+          path: FlEasyTier-*
           overwrite: true
 
   release:

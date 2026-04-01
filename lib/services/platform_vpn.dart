@@ -11,7 +11,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 class PlatformVpn {
-  static const _channel = MethodChannel('com.easytier.fleasytier/vpn');
+  static const _channel = MethodChannel('com.ewloyw8.fleasytier/vpn');
 
   /// Whether the current platform requires a system VPN API
   /// (as opposed to the core creating TUN directly).
@@ -86,7 +86,7 @@ class PlatformVpn {
     }
     if (Platform.isLinux) {
       return 'Linux requires one of:\n'
-          '  1. Run as root: sudo ./fleasytier\n'
+          '  1. Run as root: sudo ./FlEasyTier\n'
           '  2. Set capability: sudo setcap cap_net_admin+ep easytier-core\n'
           '  3. Ensure /dev/net/tun exists:\n'
           '     sudo mkdir -p /dev/net && sudo mknod /dev/net/tun c 10 200';

@@ -1,5 +1,5 @@
 #define MyAppName "FlEasyTier"
-#define MyAppExeName "fleasytier.exe"
+#define MyAppExeName "FlEasyTier.exe"
 #define MyAppPublisher "eWloYW8"
 #define MyAppURL "https://github.com/eWloYW8/FlEasyTier"
 
@@ -30,7 +30,7 @@ var
   i: Integer;
   ResultCode: Integer;
 begin
-  Processes := ['fleasytier.exe', 'easytier-core.exe'];
+  Processes := ['FlEasyTier.exe', 'easytier-core.exe'];
   for i := 0 to GetArrayLength(Processes)-1 do
   begin
     Exec('taskkill', '/f /im ' + Processes[i], '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
