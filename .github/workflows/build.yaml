@@ -1,0 +1,146 @@
+name: build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  IS_STABLE: ${{ !contains(github.ref, '-') }}
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            arch: amd64
+          - platform: linux
+            os: ubuntu-22.04
+            arch: amd64
+          - platform: macos
+            os: macos-15
+            arch: amd64
+          - platform: macos
+            os: macos-latest
+            arch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/EasyTier
+
+      - name: Install Linux Dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev libayatana-appindicator3-dev pkg-config protobuf-compiler
+
+      - name: Install macOS Dependencies
+        if: matrix.platform == 'macos'
+        run: brew install protobuf
+
+      - name: Install Windows Dependencies
+        if: matrix.platform == 'windows'
+        run: choco install protoc -y
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter Dependencies
+        run: |
+          flutter --version
+          flutter pub get
+
+      - name: Build Windows
+        if: matrix.platform == 'windows'
+        run: flutter build windows --release
+
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: flutter build linux --release
+
+      - name: Build macOS
+        if: matrix.platform == 'macos'
+        run: flutter build macos --release
+
+      - name: Package Windows Zip
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "fleasytier-${version}-windows-${{ matrix.arch }}.zip"
+
+      - name: Package Windows Setup
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          SOURCE_DIR: ${{ github.workspace }}\build\windows\x64\runner\Release
+          OUTPUT_DIR: ${{ github.workspace }}
+          OUTPUT_FILENAME: fleasytier-${{ github.ref_name }}-windows-${{ matrix.arch }}-setup
+          ICON_FILE: ${{ github.workspace }}\windows\runner\resources\app_icon.ico
+          APP_VERSION: ${{ github.ref_name }}
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\packaging\exe\inno_setup.iss
+
+      - name: Package Linux
+        if: matrix.platform == 'linux'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd build/linux/x64/release/bundle
+          tar -czf "${GITHUB_WORKSPACE}/fleasytier-${VERSION}-linux-${{ matrix.arch }}.tar.gz" .
+
+      - name: Package macOS
+        if: matrix.platform == 'macos'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd build/macos/Build/Products/Release
+          zip -r "${GITHUB_WORKSPACE}/fleasytier-${VERSION}-macos-${{ matrix.arch }}.zip" fleasytier.app
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-${{ matrix.platform }}-${{ matrix.arch }}
+          path: fleasytier-*
+          overwrite: true
+
+  release:
+    permissions: write-all
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          pattern: artifact-*
+          merge-multiple: true
+
+      - name: Generate SHA256
+        if: env.IS_STABLE == 'true'
+        run: |
+          cd ./dist
+          for file in $(find . -type f -not -name "*.sha256"); do
+            sha256sum "$file" > "${file}.sha256"
+          done
+
+      - name: Release
+        if: env.IS_STABLE == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./dist/*
