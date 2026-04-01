@@ -4,7 +4,7 @@
 #define MyAppURL "https://github.com/eWloYW8/FlEasyTier"
 
 [Setup]
-AppId={B8F5E3A1-7D2C-4E9F-A6B0-1C3D5E7F9A2B}
+AppId={{B8F5E3A1-7D2C-4E9F-A6B0-1C3D5E7F9A2B}
 AppName={#MyAppName}
 AppVersion={#GetEnv('APP_VERSION')}
 AppPublisher={#MyAppPublisher}
