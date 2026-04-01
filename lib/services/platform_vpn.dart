@@ -72,7 +72,8 @@ class PlatformVpn {
           '  1. wintun.dll next to easytier-core.exe\n'
           '     Download from https://www.wintun.net/\n'
           '  2. easytier-core runs with admin privileges\n'
-          '     (auto-elevated via runas when starting)';
+          '     Run FlEasyTier as Administrator when TUN mode is enabled\n'
+          '  3. Or enable No TUN / Use smoltcp for user-space mode';
     }
     if (Platform.isAndroid) {
       return 'Android uses the system VPN API.\n'

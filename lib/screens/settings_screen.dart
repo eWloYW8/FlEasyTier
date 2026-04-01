@@ -1,11 +1,11 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/app_state.dart';
-import '../services/platform_vpn.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -13,8 +13,6 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final cs = Theme.of(context).colorScheme;
-    final ts = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -22,39 +20,34 @@ class SettingsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           // ── Binary paths ──
-          _SettingsCard(
-            icon: Icons.folder_outlined,
-            title: 'Binary Paths',
-            children: [
-              _PathField(
-                label: 'easytier-core',
-                value: state.coreBinaryPath,
-                detected: state.coreBinaryPath != null,
-                onChanged: (v) => state.setCoreBinaryPath(v),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Status queries use direct RPC — easytier-cli not needed.',
-                style: ts.bodySmall?.copyWith(color: cs.outline),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.search, size: 18),
-                label: const Text('Auto-detect'),
-                onPressed: () async {
-                  await state.manager.detectBinaries();
-                  state.setCoreBinaryPath(state.manager.coreBinaryPath);
-                },
-              ),
-            ],
-          ),
+          if (state.canEditCoreBinaryPath)
+            _SettingsCard(
+              icon: Icons.folder_outlined,
+              title: 'Binary Paths',
+              children: [
+                _PathField(
+                  label: 'easytier-core',
+                  value: state.coreBinaryPath,
+                  detected: state.coreBinaryPath != null,
+                  onChanged: (v) => state.setCoreBinaryPath(v),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.search, size: 18),
+                  label: const Text('Auto-detect'),
+                  onPressed: () async {
+                    await state.manager.detectBinaries();
+                    state.setCoreBinaryPath(state.manager.coreBinaryPath);
+                  },
+                ),
+              ],
+            ),
 
           // ── Appearance ──
           _SettingsCard(
             icon: Icons.palette_outlined,
             title: 'Appearance',
             children: [
-              Text('Theme', style: ts.bodySmall?.copyWith(color: cs.outline)),
               const SizedBox(height: 8),
               SegmentedButton<ThemeMode>(
                 segments: const [
@@ -75,9 +68,6 @@ class SettingsScreen extends StatelessWidget {
                 onSelectionChanged: (s) => state.setThemeMode(s.first),
               ),
               const SizedBox(height: 20),
-              Text('Accent Color',
-                  style: ts.bodySmall?.copyWith(color: cs.outline)),
-              const SizedBox(height: 8),
               _ColorPicker(
                 selected: state.seedColor,
                 onChanged: (c) => state.setSeedColor(c),
@@ -95,8 +85,6 @@ class SettingsScreen extends StatelessWidget {
                   Platform.isMacOS) ...[
                 SwitchListTile(
                   title: const Text('Close to tray'),
-                  subtitle: const Text(
-                      'Hide window instead of quitting when instances are running'),
                   value: state.closeToTray,
                   onChanged: (v) => state.setCloseToTray(v),
                   contentPadding: EdgeInsets.zero,
@@ -156,96 +144,6 @@ class SettingsScreen extends StatelessWidget {
               ),
             ],
           ),
-
-          // ── System Service ──
-          if (Platform.isWindows || Platform.isLinux)
-            _SettingsCard(
-              icon: Icons.miscellaneous_services,
-              title: 'System Service',
-              children: [
-                Text(
-                  'Register easytier-core as a system service so it starts at boot.',
-                  style: ts.bodySmall?.copyWith(color: cs.outline),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    FilledButton.tonalIcon(
-                      icon: const Icon(Icons.add_circle_outline, size: 18),
-                      label: const Text('Install'),
-                      onPressed: () async {
-                        final msg = await state.installService();
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(msg),
-                          behavior: SnackBarBehavior.floating,
-                        ));
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.remove_circle_outline, size: 18),
-                      label: const Text('Uninstall'),
-                      onPressed: () async {
-                        final msg = await state.uninstallService();
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(msg),
-                          behavior: SnackBarBehavior.floating,
-                        ));
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-
-          // ── Platform ──
-          _SettingsCard(
-            icon: Icons.devices_outlined,
-            title: 'Platform',
-            children: [
-              Text(PlatformVpn.platformRequirements,
-                  style:
-                      ts.bodySmall?.copyWith(fontFamily: 'monospace', height: 1.5)),
-              const SizedBox(height: 12),
-              const _WintunCheck(),
-            ],
-          ),
-
-          // ── About ──
-          _SettingsCard(
-            icon: Icons.info_outline,
-            title: 'About',
-            children: [
-              _aboutRow('App', 'FlEasyTier v1.0.0'),
-              _aboutRow('Framework', 'Flutter'),
-              _aboutRow('Backend', 'EasyTier Core (direct RPC)'),
-              const SizedBox(height: 8),
-              Text(
-                'A Flutter GUI for EasyTier mesh VPN.\n'
-                'Supports Windows, Linux, macOS, and Android.',
-                style: ts.bodySmall?.copyWith(color: cs.outline),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _aboutRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500)),
-          ),
-          Text(value, style: const TextStyle(fontSize: 13)),
         ],
       ),
     );
@@ -386,23 +284,37 @@ class _PathField extends StatefulWidget {
 
 class _PathFieldState extends State<_PathField> {
   late TextEditingController _ctrl;
+  late FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.value ?? '');
+    _focusNode = FocusNode()
+      ..addListener(() {
+        if (!_focusNode.hasFocus) {
+          _commit();
+        }
+      });
   }
 
   @override
   void didUpdateWidget(_PathField old) {
     super.didUpdateWidget(old);
-    if (widget.value != old.value) {
-      _ctrl.text = widget.value ?? '';
+    final nextValue = widget.value ?? '';
+    if (_focusNode.hasFocus) return;
+    if (nextValue != _ctrl.text) {
+      _ctrl.value = _ctrl.value.copyWith(
+        text: nextValue,
+        selection: TextSelection.collapsed(offset: nextValue.length),
+        composing: TextRange.empty,
+      );
     }
   }
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -410,73 +322,57 @@ class _PathFieldState extends State<_PathField> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return TextField(
-      controller: _ctrl,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        border: const OutlineInputBorder(),
-        isDense: true,
-        suffixIcon: widget.detected
-            ? Tooltip(
-                message: 'Detected',
-                child:
-                    Icon(Icons.check_circle, color: cs.primary, size: 20))
-            : Tooltip(
-                message: 'Not found',
-                child:
-                    Icon(Icons.warning_amber, color: cs.error, size: 20)),
-      ),
-      onChanged: (v) =>
-          widget.onChanged(v.trim().isEmpty ? null : v.trim()),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Wintun check
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _WintunCheck extends StatefulWidget {
-  const _WintunCheck();
-
-  @override
-  State<_WintunCheck> createState() => _WintunCheckState();
-}
-
-class _WintunCheckState extends State<_WintunCheck> {
-  bool? _found;
-
-  @override
-  void initState() {
-    super.initState();
-    PlatformVpn.checkWintun().then((v) {
-      if (mounted) setState(() => _found = v);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_found == null || _found == true) return const SizedBox.shrink();
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: cs.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.warning_amber, size: 18, color: cs.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'wintun.dll not found next to the executable.\n'
-              'Download it from wintun.net and place it alongside fleasytier.exe.',
-              style: TextStyle(fontSize: 12, color: cs.onErrorContainer),
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _ctrl,
+            focusNode: _focusNode,
+            decoration: InputDecoration(
+              labelText: widget.label,
+              border: const OutlineInputBorder(),
+              isDense: true,
+              suffixIcon: widget.detected
+                  ? Tooltip(
+                      message: 'Detected',
+                      child: Icon(Icons.check_circle, color: cs.primary, size: 20))
+                  : Tooltip(
+                      message: 'Not found',
+                      child: Icon(Icons.warning_amber, color: cs.error, size: 20)),
             ),
+            onSubmitted: (_) => _commit(),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: _pickFile,
+          icon: const Icon(Icons.folder_open_outlined, size: 18),
+          label: const Text('Browse'),
+        ),
+      ],
     );
+  }
+
+  void _commit() {
+    final value = _ctrl.text.trim();
+    widget.onChanged(value.isEmpty ? null : value);
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: widget.label,
+      allowMultiple: false,
+      withData: false,
+      type: Platform.isWindows ? FileType.custom : FileType.any,
+      allowedExtensions: Platform.isWindows ? const ['exe'] : null,
+    );
+    final path = result?.files.single.path;
+    if (path == null || path.isEmpty) return;
+    _ctrl.value = _ctrl.value.copyWith(
+      text: path,
+      selection: TextSelection.collapsed(offset: path.length),
+      composing: TextRange.empty,
+    );
+    _commit();
   }
 }

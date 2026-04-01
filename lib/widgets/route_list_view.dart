@@ -4,347 +4,349 @@ import 'package:flutter/services.dart';
 import '../models/network_instance.dart';
 
 class RouteListView extends StatelessWidget {
-  const RouteListView({super.key, required this.routes});
+  const RouteListView({
+    super.key,
+    required this.routes,
+    required this.latencyFirstEnabled,
+  });
 
   final List<PeerRouteInfo> routes;
+  final bool latencyFirstEnabled;
 
   @override
   Widget build(BuildContext context) {
-    if (routes.isEmpty) return _empty(context);
+    if (routes.isEmpty) return const SizedBox.shrink();
 
-    // Sort: direct first, then by cost
     final sorted = List.of(routes)
       ..sort((a, b) {
         if (a.isDirect != b.isDirect) return a.isDirect ? -1 : 1;
-        return a.cost.compareTo(b.cost);
+        final latA = a.pathLatencyLatencyFirstMs > 0
+            ? a.pathLatencyLatencyFirstMs
+            : a.latencyMs;
+        final latB = b.pathLatencyLatencyFirstMs > 0
+            ? b.pathLatencyLatencyFirstMs
+            : b.latencyMs;
+        return latA.compareTo(latB);
       });
+    final peerNames = <int, String>{};
+    for (final route in sorted) {
+      if (route.hostname.isNotEmpty) {
+        peerNames[route.peerId] = route.hostname;
+      }
+    }
 
-    return ListView.builder(
+    return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: sorted.length,
-      itemBuilder: (_, i) => _RouteCard(route: sorted[i]),
-    );
-  }
-
-  Widget _empty(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.alt_route, size: 56, color: cs.outlineVariant),
-          const SizedBox(height: 16),
-          Text('No routes',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyLarge
-                  ?.copyWith(color: cs.outline)),
-          const SizedBox(height: 4),
-          Text('Routes will appear when peers connect',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: cs.outlineVariant)),
-        ],
+      separatorBuilder: (context, index) => Divider(
+        height: 1,
+        color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.28),
+      ),
+      itemBuilder: (context, index) => _RouteRow(
+        route: sorted[index],
+        peerNames: peerNames,
+        latencyFirstEnabled: latencyFirstEnabled,
       ),
     );
   }
 }
 
-class _RouteCard extends StatelessWidget {
-  const _RouteCard({required this.route});
+class _RouteRow extends StatelessWidget {
+  const _RouteRow({
+    required this.route,
+    required this.peerNames,
+    required this.latencyFirstEnabled,
+  });
   final PeerRouteInfo route;
+  final Map<int, String> peerNames;
+  final bool latencyFirstEnabled;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final directColor = route.isDirect ? Colors.green : Colors.orange;
+    final accent = route.isDirect ? Colors.green : Colors.orange;
+    final currentLatency = route.currentLatencyMs(latencyFirstEnabled);
+    final currentCost = route.currentCost(latencyFirstEnabled);
+    final currentHop = route.currentNextHopPeerId(latencyFirstEnabled);
+    final latencyFirstHop = route.nextHopPeerIdLatencyFirst;
+    final showAlternate =
+        route.hasLatencyFirstRoute &&
+        (!latencyFirstEnabled &&
+            (latencyFirstHop != route.nextHopPeerId ||
+                route.costLatencyFirst != route.cost));
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Top row: hostname + IP + route type ──
-            Row(
-              children: [
-                // Route indicator
-                Container(
-                  width: 4,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: directColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
+                child: Icon(
+                  route.isDirect ? Icons.route_outlined : Icons.compare_arrows,
+                  size: 15,
+                  color: accent.shade700,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
                             route.hostname.isNotEmpty
                                 ? route.hostname
                                 : 'Peer ${route.peerId}',
                             style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 14),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          if (route.version.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Text('v${route.version}',
-                                style: TextStyle(
-                                    fontSize: 10, color: cs.outline)),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          if (route.ipv4Addr.isNotEmpty) ...[
-                            InkWell(
-                              borderRadius: BorderRadius.circular(4),
-                              onTap: () {
-                                Clipboard.setData(
-                                    ClipboardData(text: route.ipv4Addr));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content:
-                                        Text('Copied: ${route.ipv4Addr}'),
-                                    duration: const Duration(seconds: 1),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
-                              },
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(route.ipv4Addr,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontFamily: 'monospace',
-                                        color: cs.primary,
-                                      )),
-                                  const SizedBox(width: 2),
-                                  Icon(Icons.copy,
-                                      size: 10, color: cs.outlineVariant),
-                                ],
-                              ),
-                            ),
-                          ],
-                          if (route.ipv6Addr.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(route.ipv6Addr,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontFamily: 'monospace',
-                                    color: cs.outline,
-                                  ),
-                                  overflow: TextOverflow.ellipsis),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // Route type
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: directColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        route.isDirect ? Icons.swap_horiz : Icons.mediation,
-                        size: 13,
-                        color: directColor.shade700,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        route.isDirect ? 'Direct' : 'Relay',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: directColor.shade700,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // ── Stats row ──
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                _StatChip(
-                  icon: Icons.tag,
-                  value: '${route.peerId}',
-                  label: 'Peer ID',
-                ),
-                _StatChip(
-                  icon: Icons.alt_route,
-                  value: '${route.cost}',
-                  label: 'Cost',
-                ),
-                _StatChip(
-                  icon: Icons.schedule,
-                  value: route.latencyMs > 0
-                      ? '${route.latencyMs.toStringAsFixed(1)}ms'
-                      : '-',
-                  label: 'Latency',
-                  valueColor: _latencyColor(route.latencyMs),
-                ),
-                if (!route.isDirect)
-                  _StatChip(
-                    icon: Icons.mediation,
-                    value: '${route.nextHopPeerId}',
-                    label: 'Next Hop',
-                  ),
-              ],
-            ),
-
-            // ── NAT info ──
-            if (route.udpNatType.isNotEmpty || route.tcpNatType.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  if (route.udpNatType.isNotEmpty) ...[
-                    Icon(Icons.swap_vert, size: 12, color: cs.outline),
-                    const SizedBox(width: 4),
-                    Text('UDP ',
-                        style: TextStyle(fontSize: 10, color: cs.outline)),
-                    Text(route.udpNatType,
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: _natColor(route.udpNatType))),
+                        const SizedBox(width: 8),
+                        _RoutePill(
+                          text: route.isDirect ? 'Direct' : 'Relay',
+                          color: accent.shade700,
+                          background: accent.withValues(alpha: 0.14),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        if (route.ipv4Cidr.isNotEmpty)
+                          _RouteMeta(
+                            icon: Icons.lan_outlined,
+                            text: route.ipv4Cidr,
+                            mono: true,
+                          ),
+                        if (route.ipv6Addr.isNotEmpty)
+                          _RouteMeta(
+                            icon: Icons.language,
+                            text: route.ipv6Addr,
+                            mono: true,
+                          ),
+                        _RouteMeta(
+                          icon: Icons.schedule_outlined,
+                          text: currentLatency > 0
+                              ? '${currentLatency.toStringAsFixed(1)} ms'
+                              : '-',
+                          color: _latencyColor(currentLatency),
+                        ),
+                        _RouteMeta(
+                          icon: Icons.route_outlined,
+                          text: 'cost $currentCost',
+                        ),
+                        if (currentHop > 0 && currentCost > 1)
+                          _RouteMeta(
+                            icon: Icons.alt_route_outlined,
+                            text: _currentHopLabel(currentHop),
+                          ),
+                      ],
+                    ),
                   ],
-                  if (route.udpNatType.isNotEmpty &&
-                      route.tcpNatType.isNotEmpty)
-                    const SizedBox(width: 16),
-                  if (route.tcpNatType.isNotEmpty) ...[
-                    Icon(Icons.sync_alt, size: 12, color: cs.outline),
-                    const SizedBox(width: 4),
-                    Text('TCP ',
-                        style: TextStyle(fontSize: 10, color: cs.outline)),
-                    Text(route.tcpNatType,
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: _natColor(route.tcpNatType))),
-                  ],
-                ],
+                ),
               ),
             ],
-
-            // ── Proxy CIDRs ──
-            if (route.proxyCidrs.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  Icon(Icons.lan_outlined, size: 12, color: cs.outline),
-                  ...route.proxyCidrs.map((cidr) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(cidr,
-                            style: const TextStyle(
-                                fontSize: 10, fontFamily: 'monospace')),
-                      )),
-                ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 6,
+            children: [
+              _RouteMeta(
+                icon: latencyFirstEnabled
+                    ? Icons.check_circle_outline
+                    : Icons.radio_button_checked,
+                text: latencyFirstEnabled ? 'Current: latency-first' : 'Current: default',
+                color: latencyFirstEnabled ? Colors.teal : Colors.blueGrey,
+              ),
+              if (showAlternate)
+                _RouteMeta(
+                  icon: Icons.speed_outlined,
+                  text: _latencyFirstLabel(),
+                ),
+              if (showAlternate && route.pathLatencyLatencyFirstMs > 0)
+                _RouteMeta(
+                  icon: Icons.timelapse_outlined,
+                  text:
+                      'LF ${route.pathLatencyLatencyFirstMs.toStringAsFixed(1)} ms',
+                  color: _latencyColor(route.pathLatencyLatencyFirstMs),
+                ),
+              if (route.instId.isNotEmpty)
+                _RouteMeta(
+                  icon: Icons.fingerprint_outlined,
+                  text: route.instId,
+                  mono: true,
+                ),
+              if (route.udpNatType.isNotEmpty)
+                _RouteMeta(
+                  icon: Icons.swap_vert,
+                  text: route.udpNatType,
+                ),
+              if (route.tcpNatType.isNotEmpty)
+                _RouteMeta(
+                  icon: Icons.sync_alt,
+                  text: route.tcpNatType,
+                ),
+              ...route.proxyCidrs.map(
+                (cidr) => _CopyableMeta(
+                  icon: Icons.account_tree_outlined,
+                  text: cidr,
+                ),
               ),
             ],
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _currentHopLabel(int peerId) => _nextHopLabel(peerId, route.currentCost(latencyFirstEnabled));
+
+  String _nextHopLabel(int peerId, int cost) {
+    if (peerId <= 0 || cost <= 1) return 'Direct';
+    final name = peerNames[peerId];
+    if (name == null || name.isEmpty) {
+      return 'hop $peerId';
+    }
+    return 'hop $peerId $name';
+  }
+
+  String _latencyFirstLabel() {
+    if (route.costLatencyFirst <= 1) return 'LF Direct';
+    final name = peerNames[route.nextHopPeerIdLatencyFirst];
+    if (name == null || name.isEmpty) return 'LF Peer';
+    return 'LF $name';
+  }
+}
+
+class _RouteMeta extends StatelessWidget {
+  const _RouteMeta({
+    required this.icon,
+    required this.text,
+    this.color,
+    this.mono = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color? color;
+  final bool mono;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fg = color ?? cs.outline;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: fg),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  text,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: fg,
+                    fontWeight: FontWeight.w400,
+                    fontFamily: mono ? 'monospace' : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CopyableMeta extends StatelessWidget {
+  const _CopyableMeta({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () {
+        Clipboard.setData(ClipboardData(text: text));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Copied: $text'),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      child: _RouteMeta(
+        icon: icon,
+        text: text,
+        mono: true,
+      ),
+    );
+  }
+}
+
+class _RoutePill extends StatelessWidget {
+  const _RoutePill({
+    required this.text,
+    required this.color,
+    required this.background,
+  });
+
+  final String text;
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10.5,
+          color: color,
+          fontWeight: FontWeight.w400,
         ),
       ),
     );
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Stat chip
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _StatChip extends StatelessWidget {
-  const _StatChip({
-    required this.icon,
-    required this.value,
-    required this.label,
-    this.valueColor,
-  });
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color? valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: cs.outline),
-          const SizedBox(width: 4),
-          Text('$label ',
-              style: TextStyle(fontSize: 10, color: cs.outline)),
-          Text(value,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: valueColor,
-              )),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════════════
-
 Color _latencyColor(double ms) {
   if (ms <= 0) return Colors.grey;
   if (ms < 30) return Colors.green;
-  if (ms < 80) return Colors.green.shade300;
+  if (ms < 80) return Colors.lightGreen;
   if (ms < 150) return Colors.orange;
   return Colors.red;
-}
-
-Color _natColor(String natType) {
-  final lower = natType.toLowerCase();
-  if (lower.contains('open') || lower.contains('full cone')) {
-    return Colors.green;
-  }
-  if (lower.contains('restricted') || lower.contains('no pat')) {
-    return Colors.orange;
-  }
-  if (lower.contains('symmetric') || lower.contains('sym')) {
-    return Colors.red.shade400;
-  }
-  return Colors.grey;
 }

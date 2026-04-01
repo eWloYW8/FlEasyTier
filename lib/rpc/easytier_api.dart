@@ -1,8 +1,3 @@
-/// High-level EasyTier API — translates RPC responses into model objects.
-///
-/// Proto field mappings verified against:
-///   easytier/src/proto/api_instance.proto
-///   easytier/src/proto/common.proto
 library;
 
 import 'dart:typed_data';
@@ -25,17 +20,12 @@ class EasyTierApi {
 
   static final _emptyRequest = Uint8List(0);
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Node Info (ShowNodeInfo → ShowNodeInfoResponse { NodeInfo node_info=1 })
-  // ═══════════════════════════════════════════════════════════════════════
-
   Future<NodeInfo?> getNodeInfo() async {
     try {
       final raw = await _client.call(EtRpc.showNodeInfo, _emptyRequest);
       if (raw.isEmpty) return null;
-      final f = ProtoReader.decode(raw);
-      // ShowNodeInfoResponse: field 1 = NodeInfo
-      final nodeMsg = f.getMessage(1);
+      final fields = ProtoReader.decode(raw);
+      final nodeMsg = fields.getMessage(1);
       if (nodeMsg == null) return null;
       return _parseNodeInfo(nodeMsg);
     } on RpcException {
@@ -43,69 +33,20 @@ class EasyTierApi {
     }
   }
 
-  /// NodeInfo proto:
-  /// ```
-  /// uint32 peer_id = 1;
-  /// string ipv4_addr = 2;          // "10.1.2.66/24"
-  /// repeated string proxy_cidrs = 3;
-  /// string hostname = 4;
-  /// common.StunInfo stun_info = 5;
-  /// string inst_id = 6;
-  /// repeated string listeners = 7;  // plain strings
-  /// string config = 8;
-  /// string version = 9;
-  /// common.PeerFeatureFlag feature_flag = 10;
-  /// ```
-  NodeInfo _parseNodeInfo(ProtoFields f) {
-    final peerId = f.getVarint(1);
-    final ipv4Addr = f.getString(2); // e.g. "10.1.2.66/24"
-    final virtualIpv4 = ipv4Addr.split('/').first;
-    final hostname = f.getString(4);
-    final listeners = f.getRepeatedString(7);
-    final version = f.getString(9);
-
-    // StunInfo: udp_nat_type=1, tcp_nat_type=2, public_ip=4(repeated string)
-    String udpNatType = '';
-    String tcpNatType = '';
-    List<String> publicIps = [];
-    final stunMsg = f.getMessage(5);
-    if (stunMsg != null) {
-      udpNatType = _natTypeStr(stunMsg.getVarint(1));
-      tcpNatType = _natTypeStr(stunMsg.getVarint(2));
-      publicIps = stunMsg.getRepeatedString(4);
-    }
-
-    return NodeInfo(
-      virtualIpv4: virtualIpv4,
-      hostname: hostname,
-      version: version,
-      peerId: peerId,
-      listeners: listeners,
-      udpNatType: udpNatType,
-      tcpNatType: tcpNatType,
-      publicIps: publicIps,
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Peers (ListPeer → ListPeerResponse { repeated PeerInfo peer_infos=1 })
-  // ═══════════════════════════════════════════════════════════════════════
-
   Future<List<PeerConnInfo>> listPeers() async {
     try {
       final raw = await _client.call(EtRpc.listPeer, _emptyRequest);
       if (raw.isEmpty) return [];
-      final f = ProtoReader.decode(raw);
-      // ListPeerResponse: field 1 = repeated PeerInfo
-      final peerInfos = f.getRepeatedMessage(1);
+      final fields = ProtoReader.decode(raw);
+      final peerInfos = fields.getRepeatedMessage(1);
       final conns = <PeerConnInfo>[];
 
       for (final peerMsg in peerInfos) {
-        // PeerInfo: peer_id=1, repeated PeerConnInfo conns=2
         final peerId = peerMsg.getVarint(1);
+        final defaultConnId = _parseUuid(peerMsg.getMessage(3));
         final connMsgs = peerMsg.getRepeatedMessage(2);
         for (final connMsg in connMsgs) {
-          conns.add(_parsePeerConn(connMsg, peerId));
+          conns.add(_parsePeerConn(connMsg, peerId, defaultConnId));
         }
       }
       return conns;
@@ -114,187 +55,204 @@ class EasyTierApi {
     }
   }
 
-  /// PeerConnInfo proto:
-  /// ```
-  /// string conn_id = 1;
-  /// uint32 my_peer_id = 2;
-  /// uint32 peer_id = 3;
-  /// repeated string features = 4;
-  /// common.TunnelInfo tunnel = 5;
-  /// PeerConnStats stats = 6;
-  /// float loss_rate = 7;
-  /// bool is_client = 8;
-  /// string network_name = 9;
-  /// bool is_closed = 10;
-  /// ```
-  PeerConnInfo _parsePeerConn(ProtoFields f, int peerIdHint) {
-    final connId = f.getString(1);
-    final peerId = f.getVarint(3, peerIdHint);
-    final features = f.getRepeatedString(4);
-
-    // TunnelInfo: tunnel_type=1, local_addr=2(Url), remote_addr=3(Url)
-    String tunnelType = '';
-    String localAddr = '';
-    String remoteAddr = '';
-    final tunnelMsg = f.getMessage(5);
-    if (tunnelMsg != null) {
-      tunnelType = tunnelMsg.getString(1);
-      localAddr = _parseUrl(tunnelMsg.getMessage(2));
-      remoteAddr = _parseUrl(tunnelMsg.getMessage(3));
-    }
-
-    // PeerConnStats: rx_bytes=1, tx_bytes=2, rx_packets=3, tx_packets=4, latency_us=5
-    int rxBytes = 0, txBytes = 0, rxPackets = 0, txPackets = 0;
-    double latencyMs = 0;
-    final statsMsg = f.getMessage(6);
-    if (statsMsg != null) {
-      rxBytes = statsMsg.getVarint(1);
-      txBytes = statsMsg.getVarint(2);
-      rxPackets = statsMsg.getVarint(3);
-      txPackets = statsMsg.getVarint(4);
-      latencyMs = statsMsg.getVarint(5) / 1000.0;
-    }
-
-    // loss_rate is float (wire type fixed32)
-    double lossRate = 0;
-    final lossBytes = f.getBytes(7);
-    if (lossBytes.length == 4) {
-      lossRate = ByteData.sublistView(lossBytes).getFloat32(0, Endian.little);
-    }
-
-    return PeerConnInfo(
-      peerId: peerId,
-      connId: connId,
-      tunnelType: tunnelType,
-      localAddr: localAddr,
-      remoteAddr: remoteAddr,
-      rxBytes: rxBytes,
-      txBytes: txBytes,
-      rxPackets: rxPackets,
-      txPackets: txPackets,
-      latencyMs: latencyMs,
-      lossRate: lossRate,
-      features: features,
-      networkName: f.getString(9),
-      isClient: f.getBool(8),
-      isClosed: f.getBool(10),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Routes (ListRoute → ListRouteResponse { repeated Route routes=1 })
-  // ═══════════════════════════════════════════════════════════════════════
-
   Future<List<PeerRouteInfo>> listRoutes() async {
     try {
       final raw = await _client.call(EtRpc.listRoute, _emptyRequest);
       if (raw.isEmpty) return [];
-      final f = ProtoReader.decode(raw);
-      final routeMsgs = f.getRepeatedMessage(1);
-      return routeMsgs.map(_parseRoute).toList();
+      final fields = ProtoReader.decode(raw);
+      return fields.getRepeatedMessage(1).map(_parseRoute).toList();
     } on RpcException {
       return [];
     }
   }
 
-  /// Route proto:
-  /// ```
-  /// uint32 peer_id = 1;
-  /// common.Ipv4Inet ipv4_addr = 2;
-  /// uint32 next_hop_peer_id = 3;
-  /// int32 cost = 4;
-  /// repeated string proxy_cidrs = 5;
-  /// string hostname = 6;
-  /// common.StunInfo stun_info = 7;
-  /// string inst_id = 8;
-  /// string version = 9;
-  /// common.PeerFeatureFlag feature_flag = 10;
-  /// int32 path_latency = 11;          // microseconds
-  /// common.Ipv6Inet ipv6_addr = 15;
-  /// ```
-  PeerRouteInfo _parseRoute(ProtoFields f) {
-    final peerId = f.getVarint(1);
-
-    // Ipv4Inet: Ipv4Addr addr=1 { uint32 addr=1 }, uint32 network_length=2
-    String ipv4 = '';
-    final ipv4Msg = f.getMessage(2);
-    if (ipv4Msg != null) {
-      final addrMsg = ipv4Msg.getMessage(1);
-      if (addrMsg != null) {
-        ipv4 = _uint32ToIpv4(addrMsg.getVarint(1));
-      }
+  Future<List<MetricSnapshot>> getStats() async {
+    try {
+      final raw = await _client.call(EtRpc.getStats, _emptyRequest);
+      if (raw.isEmpty) return [];
+      final fields = ProtoReader.decode(raw);
+      return fields.getRepeatedMessage(1).map(_parseMetric).toList();
+    } on RpcException {
+      return [];
     }
+  }
 
-    final nextHop = f.getVarint(3);
-    final cost = f.getVarint(4);
-    final proxyCidrs = f.getRepeatedString(5);
-    final hostname = f.getString(6);
-    final version = f.getString(9);
-    final latUs = f.getVarint(11);
+  NodeInfo _parseNodeInfo(ProtoFields fields) {
+    final ipv4Cidr = fields.getString(2);
+    final stun = fields.getMessage(5);
+    final ipList = fields.getMessage(11);
 
-    // StunInfo
-    String udpNatType = '';
-    String tcpNatType = '';
-    final stunMsg = f.getMessage(7);
-    if (stunMsg != null) {
-      udpNatType = _natTypeStr(stunMsg.getVarint(1));
-      tcpNatType = _natTypeStr(stunMsg.getVarint(2));
-    }
-
-    // Ipv6Inet ipv6_addr = 15 → { Ipv6Addr address=1, uint32 network_length=2 }
-    // Ipv6Addr { uint32 part1=1, uint32 part2=2, uint32 part3=3, uint32 part4=4 }
-    String ipv6 = '';
-    final ipv6Msg = f.getMessage(15);
-    if (ipv6Msg != null) {
-      final addrMsg = ipv6Msg.getMessage(1);
-      if (addrMsg != null) {
-        ipv6 = _ipv6FromParts(addrMsg);
-      }
-    }
-
-    return PeerRouteInfo(
-      peerId: peerId,
-      ipv4Addr: ipv4,
-      ipv6Addr: ipv6,
-      hostname: hostname,
-      nextHopPeerId: nextHop,
-      cost: cost,
-      latencyMs: latUs / 1000.0,
-      proxyCidrs: proxyCidrs,
-      udpNatType: udpNatType,
-      tcpNatType: tcpNatType,
-      version: version,
+    return NodeInfo(
+      peerId: fields.getVarint(1),
+      virtualIpv4Cidr: ipv4Cidr,
+      virtualIpv4: ipv4Cidr.split('/').first,
+      hostname: fields.getString(4),
+      udpNatType: _natTypeStr(stun?.getVarint(1) ?? 0),
+      tcpNatType: _natTypeStr(stun?.getVarint(2) ?? 0),
+      publicIps: [
+        if (_parseIpv4(ipList?.getMessage(1)).isNotEmpty)
+          _parseIpv4(ipList?.getMessage(1)),
+        ..._readRepeatedIpv4(ipList, 2),
+      ],
+      publicIpv6: _parseIpv6(ipList?.getMessage(3)),
+      interfaceIpv4s: _readRepeatedIpv4(ipList, 2),
+      interfaceIpv6s: _readRepeatedIpv6(ipList, 4),
+      listeners: {
+        ...fields.getRepeatedString(7),
+        ..._readRepeatedUrl(ipList, 5),
+      }.toList(),
+      instId: fields.getString(6),
+      configDump: fields.getString(8),
+      version: fields.getString(9),
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Helpers
-  // ═══════════════════════════════════════════════════════════════════════
+  PeerConnInfo _parsePeerConn(
+    ProtoFields fields,
+    int peerIdHint,
+    String defaultConnId,
+  ) {
+    final tunnelMsg = fields.getMessage(5);
+    final statsMsg = fields.getMessage(6);
+    final lossBytes = fields.getBytes(7);
 
-  /// Url message: field 1 = string url
-  String _parseUrl(ProtoFields? f) => f?.getString(1) ?? '';
+    double lossRate = 0;
+    if (lossBytes.length == 4) {
+      lossRate = ByteData.sublistView(lossBytes).getFloat32(0, Endian.little);
+    }
 
-  /// Convert big-endian u32 to dotted IPv4 string.
-  String _uint32ToIpv4(int addr) {
-    if (addr == 0) return '';
-    return '${(addr >> 24) & 0xFF}.${(addr >> 16) & 0xFF}'
-        '.${(addr >> 8) & 0xFF}.${addr & 0xFF}';
+    final connId = fields.getString(1);
+    return PeerConnInfo(
+      connId: connId,
+      myPeerId: fields.getVarint(2),
+      peerId: fields.getVarint(3, peerIdHint),
+      features: fields.getRepeatedString(4),
+      tunnelType: tunnelMsg?.getString(1) ?? '',
+      localAddr: _parseUrl(tunnelMsg?.getMessage(2)),
+      remoteAddr: _parseUrl(tunnelMsg?.getMessage(3)),
+      rxBytes: statsMsg?.getVarint(1) ?? 0,
+      txBytes: statsMsg?.getVarint(2) ?? 0,
+      rxPackets: statsMsg?.getVarint(3) ?? 0,
+      txPackets: statsMsg?.getVarint(4) ?? 0,
+      latencyMs: (statsMsg?.getVarint(5) ?? 0) / 1000.0,
+      lossRate: lossRate,
+      isClient: fields.getBool(8),
+      networkName: fields.getString(9),
+      isClosed: fields.getBool(10),
+      isDefault: defaultConnId.isNotEmpty && defaultConnId == connId,
+      secureAuthLevel: _secureAuthLevel(fields.getVarint(13)),
+      peerIdentityType: _peerIdentityType(fields.getVarint(14)),
+    );
   }
 
-  /// Ipv6Addr { uint32 part1=1, part2=2, part3=3, part4=4 }
-  /// Each part is a big-endian 32-bit chunk of the 128-bit address.
-  String _ipv6FromParts(ProtoFields addrMsg) {
-    final p1 = addrMsg.getVarint(1);
-    final p2 = addrMsg.getVarint(2);
-    final p3 = addrMsg.getVarint(3);
-    final p4 = addrMsg.getVarint(4);
+  PeerRouteInfo _parseRoute(ProtoFields fields) {
+    final ipv4Inet = fields.getMessage(2);
+    final ipv6Inet = fields.getMessage(15);
+    final stun = fields.getMessage(7);
+
+    final ipv4Addr = _parseIpv4(ipv4Inet?.getMessage(1));
+    final ipv4Cidr = ipv4Addr.isEmpty
+        ? ''
+        : '$ipv4Addr/${ipv4Inet?.getVarint(2) ?? 0}';
+
+    return PeerRouteInfo(
+      peerId: fields.getVarint(1),
+      ipv4Addr: ipv4Addr,
+      ipv4Cidr: ipv4Cidr,
+      ipv6Addr: _parseIpv6(ipv6Inet?.getMessage(1)),
+      nextHopPeerId: fields.getVarint(3),
+      cost: fields.getVarint(4),
+      latencyMs: fields.getVarint(11).toDouble(),
+      proxyCidrs: fields.getRepeatedString(5),
+      hostname: fields.getString(6),
+      udpNatType: _natTypeStr(stun?.getVarint(1) ?? 0),
+      tcpNatType: _natTypeStr(stun?.getVarint(2) ?? 0),
+      instId: fields.getString(8),
+      version: fields.getString(9),
+      nextHopPeerIdLatencyFirst: fields.getVarint(12),
+      costLatencyFirst: fields.getVarint(13),
+      pathLatencyLatencyFirstMs: fields.getVarint(14).toDouble(),
+    );
+  }
+
+  MetricSnapshot _parseMetric(ProtoFields fields) {
+    final labels = <String, String>{};
+    for (final labelMsg in fields.getRepeatedMessage(3)) {
+      final key = labelMsg.getString(1);
+      if (key.isEmpty) continue;
+      labels[key] = labelMsg.getString(2);
+    }
+
+    return MetricSnapshot(
+      name: fields.getString(1),
+      value: fields.getVarint(2),
+      labels: labels,
+    );
+  }
+
+  String _parseUrl(ProtoFields? fields) => fields?.getString(1) ?? '';
+
+  String _parseIpv4(ProtoFields? fields) {
+    if (fields == null) return '';
+    final addr = fields.getVarint(1);
+    return _uint32ToIpv4(addr);
+  }
+
+  List<String> _readRepeatedIpv4(ProtoFields? parent, int fieldNumber) {
+    if (parent == null) return const [];
+    return parent
+        .getRepeatedMessage(fieldNumber)
+        .map(_parseIpv4)
+        .where((ip) => ip.isNotEmpty)
+        .toList();
+  }
+
+  String _parseIpv6(ProtoFields? fields) {
+    if (fields == null) return '';
+    final p1 = fields.getVarint(1);
+    final p2 = fields.getVarint(2);
+    final p3 = fields.getVarint(3);
+    final p4 = fields.getVarint(4);
     if (p1 == 0 && p2 == 0 && p3 == 0 && p4 == 0) return '';
+    String group(int v, int shift) => ((v >> shift) & 0xFFFF).toRadixString(16);
+    return '${group(p1, 16)}:${group(p1, 0)}:${group(p2, 16)}:${group(p2, 0)}'
+        ':${group(p3, 16)}:${group(p3, 0)}:${group(p4, 16)}:${group(p4, 0)}';
+  }
 
-    String h(int v, int shift) =>
-        ((v >> shift) & 0xFFFF).toRadixString(16);
+  List<String> _readRepeatedIpv6(ProtoFields? parent, int fieldNumber) {
+    if (parent == null) return const [];
+    return parent
+        .getRepeatedMessage(fieldNumber)
+        .map(_parseIpv6)
+        .where((ip) => ip.isNotEmpty)
+        .toList();
+  }
 
-    return '${h(p1, 16)}:${h(p1, 0)}:${h(p2, 16)}:${h(p2, 0)}'
-        ':${h(p3, 16)}:${h(p3, 0)}:${h(p4, 16)}:${h(p4, 0)}';
+  List<String> _readRepeatedUrl(ProtoFields? parent, int fieldNumber) {
+    if (parent == null) return const [];
+    return parent
+        .getRepeatedMessage(fieldNumber)
+        .map(_parseUrl)
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+
+  String _parseUuid(ProtoFields? fields) {
+    if (fields == null) return '';
+    final p1 = fields.getVarint(1).toRadixString(16).padLeft(8, '0');
+    final p2 = fields.getVarint(2).toRadixString(16).padLeft(8, '0');
+    final p3 = fields.getVarint(3).toRadixString(16).padLeft(8, '0');
+    final p4 = fields.getVarint(4).toRadixString(16).padLeft(8, '0');
+    final hex = '$p1$p2$p3$p4';
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20, 32)}';
+  }
+
+  String _uint32ToIpv4(int addr) {
+    if (addr == 0) return '';
+    return '${(addr >> 24) & 0xFF}.${(addr >> 16) & 0xFF}.'
+        '${(addr >> 8) & 0xFF}.${addr & 0xFF}';
   }
 }
 
@@ -311,4 +269,17 @@ const _natTypeNames = {
   9: 'Sym Easy Dec',
 };
 
-String _natTypeStr(int v) => _natTypeNames[v] ?? 'Unknown';
+String _natTypeStr(int value) => _natTypeNames[value] ?? 'Unknown';
+
+String _secureAuthLevel(int value) => switch (value) {
+      1 => 'Encrypted',
+      2 => 'Peer Verified',
+      3 => 'Secret Confirmed',
+      _ => 'None',
+    };
+
+String _peerIdentityType(int value) => switch (value) {
+      1 => 'Credential',
+      2 => 'Shared Node',
+      _ => 'Admin',
+    };

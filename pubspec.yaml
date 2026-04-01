@@ -13,6 +13,8 @@ dependencies:
   path_provider: ^2.1.5
   uuid: ^4.5.1
   window_manager: ^0.4.3
+  toml: ^0.18.0
+  file_picker: ^10.3.10
 
 dev_dependencies:
   flutter_test:

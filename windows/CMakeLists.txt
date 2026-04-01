@@ -52,6 +52,32 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+set(REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
+set(EASYTIER_EMBED_DIR "${PROJECT_BINARY_DIR}/embedded")
+set(EASYTIER_CORE_FILE "${EASYTIER_EMBED_DIR}/easytier-core.exe")
+set(EASYTIER_WINTUN_FILE "${EASYTIER_EMBED_DIR}/wintun.dll")
+
+add_custom_command(
+  OUTPUT "${EASYTIER_CORE_FILE}" "${EASYTIER_WINTUN_FILE}"
+  COMMAND powershell
+    -NoProfile
+    -ExecutionPolicy Bypass
+    -File "${REPO_ROOT_DIR}/tool/prepare_easytier.ps1"
+    -RepoRoot "${REPO_ROOT_DIR}"
+    -OutputDir "${EASYTIER_EMBED_DIR}"
+  DEPENDS
+    "${REPO_ROOT_DIR}/tool/prepare_easytier.ps1"
+    "${REPO_ROOT_DIR}/third_party/EasyTier/.git"
+  COMMENT "Building bundled easytier-core and wintun"
+  VERBATIM
+)
+
+add_custom_target(embedded_easytier ALL
+  DEPENDS "${EASYTIER_CORE_FILE}" "${EASYTIER_WINTUN_FILE}"
+)
+
+add_dependencies(${BINARY_NAME} embedded_easytier)
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -107,10 +133,7 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
 
-# Bundle wintun.dll alongside the executable if present.
-# Users must place wintun.dll in the windows/ directory.
-set(WINTUN_DLL "${CMAKE_CURRENT_SOURCE_DIR}/wintun.dll")
-if(EXISTS "${WINTUN_DLL}")
-  install(FILES "${WINTUN_DLL}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
-    COMPONENT Runtime)
-endif()
+install(FILES "${EASYTIER_CORE_FILE}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+install(FILES "${EASYTIER_WINTUN_FILE}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)

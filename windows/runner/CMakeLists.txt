@@ -38,3 +38,13 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+set(EASYTIER_EMBED_DIR "${CMAKE_BINARY_DIR}/embedded")
+add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${EASYTIER_EMBED_DIR}/easytier-core.exe"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/easytier-core.exe"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${EASYTIER_EMBED_DIR}/wintun.dll"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/wintun.dll"
+)

@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/network_config.dart';
@@ -119,7 +123,7 @@ class _ConfigList extends StatelessWidget {
         return NetworkTile(
           config: cfg,
           running: running,
-          peerCount: instance?.peerCount ?? 0,
+          instance: instance,
           selected: cfg.id == selected,
           onTap: () {
             state.selectConfig(cfg.id);
@@ -146,25 +150,11 @@ class _EmptyList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.hub_outlined, size: 64, color: cs.outlineVariant),
-          const SizedBox(height: 16),
-          Text('No networks yet',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(color: cs.outline)),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            icon: const Icon(Icons.add),
-            label: const Text('Create network'),
-            onPressed: () => _addConfig(context),
-          ),
-        ],
+      child: FilledButton.icon(
+        icon: const Icon(Icons.add),
+        label: const Text('Create Network'),
+        onPressed: () => _addConfig(context),
       ),
     );
   }
@@ -175,34 +165,181 @@ class _EmptyDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.arrow_back, size: 48, color: cs.outlineVariant),
-          const SizedBox(height: 12),
-          Text('Select a network',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyLarge
-                  ?.copyWith(color: cs.outline)),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 
 // ── Helpers ──
 
-void _addConfig(BuildContext context) {
-  final state = context.read<AppState>();
-  final rpcPort = 15888 + state.configs.length;
-  final config = NetworkConfig(rpcPort: rpcPort);
-  Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => ChangeNotifierProvider.value(
-      value: state,
-      child: ConfigEditScreen(config: config, isNew: true),
+Future<void> _addConfig(BuildContext context) async {
+  final action = await showModalBottomSheet<_NewNetworkAction>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.file_open_outlined),
+              title: const Text('Import TOML'),
+              onTap: () => Navigator.pop(ctx, _NewNetworkAction.importToml),
+            ),
+            ListTile(
+              leading: const Icon(Icons.tune),
+              title: const Text('Edit Config'),
+              onTap: () => Navigator.pop(ctx, _NewNetworkAction.editConfig),
+            ),
+            ListTile(
+              leading: const Icon(Icons.code_outlined),
+              title: const Text('Edit TOML'),
+              onTap: () => Navigator.pop(ctx, _NewNetworkAction.editToml),
+            ),
+          ],
+        ),
+      ),
     ),
-  ));
+  );
+  if (action == null || !context.mounted) return;
+
+  final state = context.read<AppState>();
+  switch (action) {
+    case _NewNetworkAction.importToml:
+      await _showTomlImportDialog(context, state);
+    case _NewNetworkAction.editConfig:
+      final config = _makeDraftConfig(state);
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ChangeNotifierProvider.value(
+          value: state,
+          child: ConfigEditScreen(config: config, isNew: true),
+        ),
+      ));
+    case _NewNetworkAction.editToml:
+      await _showNewTomlEditor(context, state);
+  }
+}
+
+NetworkConfig _makeDraftConfig(AppState state) {
+  final used = state.configs.map((c) => c.rpcPort).toSet();
+  var rpcPort = 15888;
+  while (used.contains(rpcPort)) {
+    rpcPort++;
+  }
+  return NetworkConfig(rpcPort: rpcPort);
+}
+
+Future<void> _showTomlImportDialog(BuildContext context, AppState state) async {
+  final fallbackConfig = _makeDraftConfig(state);
+  try {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['toml'],
+      dialogTitle: 'Import TOML',
+      withData: false,
+    );
+    final path = result?.files.single.path;
+    if (path == null || path.isEmpty) return;
+
+    final toml = await File(path).readAsString();
+    final imported = NetworkConfig.fromToml(
+      toml,
+      id: fallbackConfig.id,
+      configName: fallbackConfig.configName,
+      autoStart: false,
+      serviceEnabled: false,
+    );
+    if (imported.rpcPort <= 0) {
+      imported.rpcPort = fallbackConfig.rpcPort;
+    }
+    state.addConfig(imported);
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Import failed: $e'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
+Future<void> _showNewTomlEditor(BuildContext context, AppState state) async {
+  final draft = _makeDraftConfig(state);
+  final ctrl = TextEditingController(text: draft.toToml());
+
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      final cs = Theme.of(ctx).colorScheme;
+      return AlertDialog(
+        title: Row(
+          children: [
+            const Text('New TOML'),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.copy, size: 18),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: ctrl.text));
+              },
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 600,
+          height: 500,
+          child: TextField(
+            controller: ctrl,
+            maxLines: null,
+            expands: true,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              filled: true,
+              fillColor: cs.surfaceContainerHighest,
+            ),
+            textAlignVertical: TextAlignVertical.top,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              try {
+                final parsed = NetworkConfig.fromToml(
+                  ctrl.text,
+                  id: draft.id,
+                  configName: draft.configName,
+                  autoStart: false,
+                  serviceEnabled: false,
+                );
+                if (parsed.rpcPort <= 0) {
+                  parsed.rpcPort = draft.rpcPort;
+                }
+                state.addConfig(parsed);
+                Navigator.pop(ctx);
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Save failed: $e'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+enum _NewNetworkAction {
+  importToml,
+  editConfig,
+  editToml,
 }

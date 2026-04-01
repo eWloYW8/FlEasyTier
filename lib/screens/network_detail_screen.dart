@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/network_config.dart';
 import '../models/network_instance.dart';
 import '../providers/app_state.dart';
+import '../services/easytier_manager.dart';
 import '../widgets/peer_list_view.dart';
 import '../widgets/route_list_view.dart';
 import '../widgets/stat_card.dart';
@@ -60,88 +61,141 @@ class _HeaderCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            // Icon
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: running
-                    ? cs.primaryContainer
-                    : cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                running ? Icons.lan : Icons.lan_outlined,
-                color: running ? cs.primary : cs.outline,
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 560;
+          final headerInfo = Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(config.displayName,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    StatusBadge(running: running),
+                    if (running && instance?.nodeInfo != null)
+                      Text(instance!.nodeInfo!.virtualIpv4,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: cs.outline)),
+                    if (running && instance != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.people_outline, size: 14, color: cs.outline),
+                          const SizedBox(width: 2),
+                          Text('${instance!.peerCount}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: cs.outline)),
+                        ],
+                      ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(config.displayName,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Row(
+          );
+
+          final actions = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!running)
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Edit',
+                  onPressed: () => _editConfig(context, config),
+                ),
+              if (!running) const SizedBox(width: 4),
+              _StartStopButton(
+                running: running,
+                serviceEnabled: config.serviceEnabled,
+                onPressed: () => state.toggleInstance(config.id),
+              ),
+              const SizedBox(width: 4),
+              _MoreMenu(config: config, running: running),
+            ],
+          );
+
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      StatusBadge(running: running),
-                      if (running && instance?.nodeInfo != null) ...[
-                        const SizedBox(width: 8),
-                        Text(instance!.nodeInfo!.virtualIpv4,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: cs.outline)),
-                      ],
-                      if (running && instance != null) ...[
-                        const SizedBox(width: 8),
-                        Icon(Icons.people_outline,
-                            size: 14, color: cs.outline),
-                        const SizedBox(width: 2),
-                        Text('${instance!.peerCount}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: cs.outline)),
-                      ],
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: running
+                                  ? cs.primaryContainer
+                                  : cs.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              running ? Icons.lan : Icons.lan_outlined,
+                              color: running ? cs.primary : cs.outline,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          headerInfo,
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: actions,
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: running
+                              ? cs.primaryContainer
+                              : cs.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          running ? Icons.lan : Icons.lan_outlined,
+                          color: running ? cs.primary : cs.outline,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      headerInfo,
+                      const SizedBox(width: 8),
+                      actions,
                     ],
                   ),
-                ],
-              ),
-            ),
-            // Actions
-            if (!running)
-              IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                tooltip: 'Edit',
-                onPressed: () => _editConfig(context, config),
-              ),
-            const SizedBox(width: 4),
-            _StartStopButton(
-              running: running,
-              onPressed: () => state.toggleInstance(config.id),
-            ),
-            const SizedBox(width: 4),
-            _MoreMenu(config: config, running: running),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
 class _StartStopButton extends StatelessWidget {
-  const _StartStopButton({required this.running, required this.onPressed});
+  const _StartStopButton({
+    required this.running,
+    required this.serviceEnabled,
+    required this.onPressed,
+  });
   final bool running;
+  final bool serviceEnabled;
   final VoidCallback onPressed;
 
   @override
@@ -149,7 +203,7 @@ class _StartStopButton extends StatelessWidget {
     if (running) {
       return FilledButton.tonalIcon(
         icon: const Icon(Icons.stop_rounded, size: 20),
-        label: const Text('Stop'),
+        label: Text(serviceEnabled ? 'Stop Service' : 'Stop'),
         style: FilledButton.styleFrom(
           foregroundColor: Theme.of(context).colorScheme.error,
         ),
@@ -158,7 +212,7 @@ class _StartStopButton extends StatelessWidget {
     }
     return FilledButton.icon(
       icon: const Icon(Icons.play_arrow_rounded, size: 20),
-      label: const Text('Start'),
+      label: Text(serviceEnabled ? 'Start Service' : 'Start'),
       onPressed: onPressed,
     );
   }
@@ -229,8 +283,12 @@ class _RunningView extends StatelessWidget {
                 PeerListView(
                   conns: instance.peerConns,
                   routes: instance.routes,
+                  latencyFirstEnabled: config.latencyFirst,
                 ),
-                RouteListView(routes: instance.routes),
+                RouteListView(
+                  routes: instance.routes,
+                  latencyFirstEnabled: config.latencyFirst,
+                ),
                 _LogsTab(configId: config.id),
               ],
             ),
@@ -260,8 +318,8 @@ class _OverviewTab extends StatelessWidget {
         children: [
           // Stats row
           Wrap(
-            spacing: 12,
-            runSpacing: 12,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               StatCard(
                 icon: Icons.router,
@@ -293,14 +351,28 @@ class _OverviewTab extends StatelessWidget {
                 label: 'TX',
                 value: _formatBytes(instance.totalTxBytes),
               ),
+              StatCard(
+                icon: Icons.forward,
+                label: 'Forwarded',
+                value: _formatBytes(instance.metricValue('traffic_bytes_forwarded')),
+              ),
+              StatCard(
+                icon: Icons.compress,
+                label: 'Compressed',
+                value: _formatBytes(instance.metricValue('compression_bytes_tx_after')),
+              ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           // Node info card
           if (node != null) _nodeInfoCard(context, node),
+          if (instance.metrics.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _trafficMetricsCard(context, instance),
+          ],
           // Error
           if (instance.errorMessage != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Card(
               color: Theme.of(context).colorScheme.errorContainer,
               child: Padding(
@@ -343,17 +415,140 @@ class _OverviewTab extends StatelessWidget {
             const SizedBox(height: 12),
             _infoRow('Hostname', node.hostname),
             _infoRow('Peer ID', '${node.peerId}'),
+            if (node.virtualIpv4Cidr.isNotEmpty)
+              _infoRow('IPv4 CIDR', node.virtualIpv4Cidr),
             _infoRow('Version', node.version),
+            if (node.instId.isNotEmpty) _infoRow('Inst ID', node.instId),
             if (node.udpNatType.isNotEmpty)
               _infoRow('UDP NAT', node.udpNatType),
             if (node.tcpNatType.isNotEmpty)
               _infoRow('TCP NAT', node.tcpNatType),
             if (node.publicIps.isNotEmpty)
               _infoRow('Public IP', node.publicIps.join(', ')),
+            if (node.publicIpv6.isNotEmpty)
+              _infoRow('Public IPv6', node.publicIpv6),
+            if (node.interfaceIpv4s.isNotEmpty)
+              _infoRow('Interface IPv4', node.interfaceIpv4s.join(', ')),
+            if (node.interfaceIpv6s.isNotEmpty)
+              _infoRow('Interface IPv6', node.interfaceIpv6s.join(', ')),
             if (node.listeners.isNotEmpty)
               _infoRow('Listeners', node.listeners.join('\n')),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _trafficMetricsCard(BuildContext context, NetworkInstance instance) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Traffic Metrics',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _metricBox(
+                  context,
+                  'Data TX',
+                  _formatBytes(instance.metricValue('traffic_bytes_tx')),
+                  Icons.upload_rounded,
+                ),
+                _metricBox(
+                  context,
+                  'Data RX',
+                  _formatBytes(instance.metricValue('traffic_bytes_rx')),
+                  Icons.download_rounded,
+                ),
+                _metricBox(
+                  context,
+                  'Control TX',
+                  _formatBytes(instance.metricValue('traffic_control_bytes_tx')),
+                  Icons.settings_ethernet,
+                ),
+                _metricBox(
+                  context,
+                  'Control RX',
+                  _formatBytes(instance.metricValue('traffic_control_bytes_rx')),
+                  Icons.call_received_rounded,
+                ),
+                _metricBox(
+                  context,
+                  'RPC TX',
+                  '${instance.metricValue('peer_rpc_client_tx')}',
+                  Icons.sync_alt_rounded,
+                ),
+                _metricBox(
+                  context,
+                  'RPC RX',
+                  '${instance.metricValue('peer_rpc_client_rx')}',
+                  Icons.compare_arrows_rounded,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metricBox(
+    BuildContext context,
+    String label,
+    String value,
+    IconData icon,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: 132,
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: cs.secondaryContainer,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 15, color: cs.onSecondaryContainer),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: cs.outline,
+                      fontWeight: FontWeight.w500,
+                    )),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -402,7 +597,8 @@ class _LogsTabState extends State<_LogsTab> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final allLogs = state.manager.getLogs(widget.configId);
+    final config = state.configById(widget.configId);
+    final allLogs = state.manager.getLogs(widget.configId, config: config);
     final cs = Theme.of(context).colorScheme;
 
     final logs = _filter.isEmpty
@@ -465,9 +661,7 @@ class _LogsTabState extends State<_LogsTab> {
         // Log content
         Expanded(
           child: logs.isEmpty
-              ? Center(
-                  child: Text('No logs',
-                      style: TextStyle(color: cs.outline)))
+              ? const SizedBox.shrink()
               : ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -503,90 +697,163 @@ class _StoppedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
+    final instance = state.instanceFor(config.id);
+    final recentLogs = state.manager.getLogs(config.id, config: config);
+    final recentTail = recentLogs.length > 10
+        ? recentLogs.sublist(recentLogs.length - 10)
+        : recentLogs;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Configuration',
-                  style:
-                      ts.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-              const Divider(height: 24),
-              _row(cs, 'Network', config.networkName),
-              _row(cs, 'Secret',
-                  config.networkSecret.isNotEmpty ? '\u2022' * 8 : '-'),
-              _row(
-                  cs,
-                  'IPv4',
-                  config.virtualIpv4.isNotEmpty
-                      ? config.virtualIpv4
-                      : (config.dhcp ? 'DHCP' : '-')),
-              if (config.virtualIpv6.isNotEmpty)
-                _row(cs, 'IPv6', config.virtualIpv6),
-              _row(cs, 'Hostname',
-                  config.hostname.isNotEmpty ? config.hostname : '-'),
-              if (config.instanceName.isNotEmpty)
-                _row(cs, 'Instance', config.instanceName),
-              _row(cs, 'Peers', '${config.peerUrls.length} configured'),
-              _row(
-                  cs,
-                  'Listeners',
-                  config.noListener
-                      ? 'Disabled'
-                      : '${config.listeners.length} configured'),
-              if (config.mappedListeners.isNotEmpty)
-                _row(cs, 'Mapped', '${config.mappedListeners.length}'),
-              _row(cs, 'RPC Port', '${config.rpcPort}'),
-              if (config.proxyCidrs.isNotEmpty)
-                _row(cs, 'Proxy CIDRs', config.proxyCidrs.join(', ')),
-              if (config.exitNodes.isNotEmpty)
-                _row(cs, 'Exit Nodes', config.exitNodes.join(', ')),
-              if (config.manualRoutes.isNotEmpty)
-                _row(cs, 'Routes', '${config.manualRoutes.length}'),
-              if (config.portForwards.isNotEmpty)
-                _row(cs, 'Port Fwd', '${config.portForwards.length} rules'),
-              if (config.vpnPortal.isNotEmpty)
-                _row(cs, 'WG Portal', config.vpnPortal),
-              if (config.compression.isNotEmpty)
-                _row(cs, 'Compression', config.compression),
-              const SizedBox(height: 4),
-              // Feature chips
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (instance?.errorMessage != null)
+            Card(
+              color: cs.errorContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Last Start Error',
+                      style: ts.titleSmall?.copyWith(
+                        color: cs.onErrorContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      instance!.errorMessage!,
+                      style: TextStyle(color: cs.onErrorContainer),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (config.dhcp) _chip(cs, 'DHCP'),
-                  if (config.enableKcpProxy) _chip(cs, 'KCP'),
-                  if (config.enableQuicProxy) _chip(cs, 'QUIC'),
-                  if (!config.disableIpv6) _chip(cs, 'IPv6'),
-                  if (config.latencyFirst) _chip(cs, 'Latency First'),
-                  if (config.enableExitNode) _chip(cs, 'Exit Node'),
-                  if (config.enableMagicDns) _chip(cs, 'Magic DNS'),
-                  if (config.enableSocks5)
-                    _chip(cs, 'SOCKS5:${config.socks5Port}'),
-                  if (config.multiThread) _chip(cs, 'Multi-Thread'),
-                  if (config.secureMode) _chip(cs, 'Secure Mode'),
-                  if (config.privateMode) _chip(cs, 'Private'),
-                  if (config.p2pOnly) _chip(cs, 'P2P Only'),
-                  if (config.noTun) _chip(cs, 'No TUN'),
-                  if (config.useSmoltcp) _chip(cs, 'smoltcp'),
-                  if (config.proxyForwardBySystem) _chip(cs, 'Sys Proxy'),
-                  if (config.autoStart) _chip(cs, 'Auto-start'),
-                  if (config.disableEncryption)
-                    _chip(cs, 'No Encryption', warn: true),
-                  if (config.disableP2p) _chip(cs, 'No P2P', warn: true),
-                  if (config.noListener) _chip(cs, 'No Listener', warn: true),
+                  Text('Configuration',
+                      style:
+                          ts.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                  const Divider(height: 24),
+                  _row(cs, 'Network', config.networkName),
+                  _row(cs, 'Secret',
+                      config.networkSecret.isNotEmpty ? '\u2022' * 8 : '-'),
+                  _row(
+                      cs,
+                      'IPv4',
+                      config.virtualIpv4.isNotEmpty
+                          ? config.virtualIpv4
+                          : (config.dhcp ? 'DHCP' : '-')),
+                  if (config.virtualIpv6.isNotEmpty)
+                    _row(cs, 'IPv6', config.virtualIpv6),
+                  _row(cs, 'Hostname',
+                      config.hostname.isNotEmpty ? config.hostname : '-'),
+                  if (config.instanceName.isNotEmpty)
+                    _row(cs, 'Instance', config.instanceName),
+                  _row(cs, 'Peers', '${config.peerUrls.length} configured'),
+                  _row(
+                      cs,
+                      'Listeners',
+                      config.noListener
+                          ? 'Disabled'
+                          : '${config.listeners.length} configured'),
+                  if (config.mappedListeners.isNotEmpty)
+                    _row(cs, 'Mapped', '${config.mappedListeners.length}'),
+                  _row(cs, 'RPC Port', '${config.rpcPort}'),
+                  if (config.proxyCidrs.isNotEmpty)
+                    _row(cs, 'Proxy CIDRs', config.proxyCidrs.join(', ')),
+                  if (config.exitNodes.isNotEmpty)
+                    _row(cs, 'Exit Nodes', config.exitNodes.join(', ')),
+                  if (config.manualRoutes.isNotEmpty)
+                    _row(cs, 'Routes', '${config.manualRoutes.length}'),
+                  if (config.portForwards.isNotEmpty)
+                    _row(cs, 'Port Fwd', '${config.portForwards.length} rules'),
+                  if (config.vpnPortal.isNotEmpty)
+                    _row(cs, 'WG Portal', config.vpnPortal),
+                  if (config.compression.isNotEmpty)
+                    _row(cs, 'Compression', config.compression),
+                  if (_supportsSystemService)
+                    ...[
+                      const SizedBox(height: 16),
+                      _ServiceSection(config: config),
+                    ],
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      if (config.dhcp) _chip(cs, 'DHCP'),
+                      if (config.enableKcpProxy) _chip(cs, 'KCP'),
+                      if (config.enableQuicProxy) _chip(cs, 'QUIC'),
+                      if (!config.disableIpv6) _chip(cs, 'IPv6'),
+                      if (config.latencyFirst) _chip(cs, 'Latency First'),
+                      if (config.enableExitNode) _chip(cs, 'Exit Node'),
+                      if (config.acceptDns) _chip(cs, 'DNS'),
+                      if (config.enableSocks5)
+                        _chip(cs, 'SOCKS5:${config.socks5Port}'),
+                      if (config.multiThread) _chip(cs, 'Multi-Thread'),
+                      if (config.secureMode) _chip(cs, 'Secure Mode'),
+                      if (config.privateMode) _chip(cs, 'Private'),
+                      if (config.p2pOnly) _chip(cs, 'P2P Only'),
+                      if (config.noTun) _chip(cs, 'No TUN'),
+                      if (config.useSmoltcp) _chip(cs, 'smoltcp'),
+                      if (config.proxyForwardBySystem) _chip(cs, 'Sys Proxy'),
+                      if (config.autoStart) _chip(cs, 'Auto-start'),
+                      if (config.serviceEnabled) _chip(cs, 'Service'),
+                      if (config.disableEncryption)
+                        _chip(cs, 'No Encryption', warn: true),
+                      if (config.disableP2p) _chip(cs, 'No P2P', warn: true),
+                      if (config.noListener)
+                        _chip(cs, 'No Listener', warn: true),
+                    ],
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
+          if (recentLogs.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Recent Instance Logs',
+                        style: ts.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 12),
+                    ...recentTail.map(
+                          (line) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: SelectableText(
+                              line,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                color: line.startsWith('[ERR]')
+                                    ? cs.error
+                                    : cs.onSurface,
+                              ),
+                            ),
+                          ),
+                        ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -622,6 +889,175 @@ class _StoppedView extends StatelessWidget {
       side: BorderSide.none,
       padding: EdgeInsets.zero,
       labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+    );
+  }
+}
+
+class _ServiceSection extends StatefulWidget {
+  const _ServiceSection({required this.config});
+  final NetworkConfig config;
+
+  @override
+  State<_ServiceSection> createState() => _ServiceSectionState();
+}
+
+class _ServiceSectionState extends State<_ServiceSection> {
+  late Future<ManagedServiceStatus> _statusFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _statusFuture = _loadStatus();
+  }
+
+  @override
+  void didUpdateWidget(_ServiceSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.config.id != widget.config.id ||
+        oldWidget.config.serviceEnabled != widget.config.serviceEnabled) {
+      _statusFuture = _loadStatus();
+    }
+  }
+
+  Future<ManagedServiceStatus> _loadStatus() {
+    return context.read<AppState>().serviceStatus(widget.config.id);
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _statusFuture = _loadStatus();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final ts = Theme.of(context).textTheme;
+
+    return FutureBuilder<ManagedServiceStatus>(
+      future: _statusFuture,
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? ManagedServiceStatus.notInstalled;
+        final statusText = switch (status) {
+          ManagedServiceStatus.running => 'Running',
+          ManagedServiceStatus.stopped => 'Installed',
+          ManagedServiceStatus.notInstalled => 'Not installed',
+        };
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('System Service',
+                style:
+                    ts.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(
+              'Manage a boot-time service for this network only.',
+              style: ts.bodySmall?.copyWith(color: cs.outline),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: status == ManagedServiceStatus.running
+                        ? cs.primaryContainer
+                        : cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: status == ManagedServiceStatus.running
+                          ? cs.onPrimaryContainer
+                          : cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.build_circle_outlined, size: 18),
+                  label: Text(widget.config.serviceEnabled
+                      ? 'Update Service'
+                      : 'Install Service'),
+                  onPressed: () async {
+                    final msg = await context
+                        .read<AppState>()
+                        .installService(widget.config.id);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(msg),
+                      behavior: SnackBarBehavior.floating,
+                    ));
+                    await _refresh();
+                  },
+                ),
+                if (widget.config.serviceEnabled)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Uninstall'),
+                    onPressed: () async {
+                      final msg = await context
+                          .read<AppState>()
+                          .uninstallService(widget.config.id);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(msg),
+                        behavior: SnackBarBehavior.floating,
+                      ));
+                      await _refresh();
+                    },
+                  ),
+                if (status != ManagedServiceStatus.notInstalled)
+                  OutlinedButton.icon(
+                    icon: Icon(
+                      status == ManagedServiceStatus.running
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline,
+                      size: 18,
+                    ),
+                    label: Text(
+                      status == ManagedServiceStatus.running ? 'Stop' : 'Start',
+                    ),
+                    onPressed: () async {
+                      final state = context.read<AppState>();
+                      String msg;
+                      if (status == ManagedServiceStatus.running) {
+                        await state.stopInstance(widget.config.id);
+                        msg = 'Service stopped';
+                      } else {
+                        msg = await state.startInstance(widget.config.id) ??
+                            'Service started';
+                      }
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(msg),
+                        behavior: SnackBarBehavior.floating,
+                      ));
+                      await _refresh();
+                    },
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -698,8 +1134,15 @@ void _showTomlEditor(BuildContext context, NetworkConfig config) {
               child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
-              // Save TOML to file directly
-              await File(tomlPath).writeAsString(ctrl.text);
+              final err = await state.updateConfigToml(config.id, ctrl.text);
+              if (err != null) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                  content: Text(err),
+                  behavior: SnackBarBehavior.floating,
+                ));
+                return;
+              }
               if (!ctx.mounted) return;
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -758,3 +1201,6 @@ String _formatBytes(int bytes) {
   }
   return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
 }
+
+bool get _supportsSystemService =>
+    Platform.isWindows || Platform.isLinux || Platform.isMacOS;

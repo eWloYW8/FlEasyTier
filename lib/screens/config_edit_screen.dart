@@ -64,6 +64,8 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
     if (_cfg.disableEncryption) _cfg.encryptionAlgorithm = '';
     // If noListener, clear listeners
     if (_cfg.noListener) _cfg.listeners = [];
+    if (!_cfg.enableRelayNetworkWhitelist) _cfg.relayNetworkWhitelist = [];
+    _cfg.enableMagicDns = _cfg.acceptDns;
     // If DHCP, clear manual IP
     if (_cfg.dhcp) {
       _cfg.virtualIpv4 = '';
@@ -361,7 +363,7 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
         const SizedBox(height: 12),
         StringListEditor(
           label: 'Manual Routes',
-          hint: 'cidr,next_hop_peer_id',
+          hint: '192.168.0.0/16',
           items: _cfg.manualRoutes,
           onChanged: (v) {
             _cfg.manualRoutes = v;
@@ -685,8 +687,6 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildRelay() {
-    final hasWhitelist = _cfg.relayNetworkWhitelist.isNotEmpty;
-
     return _Section(
       title: 'Relay',
       icon: Icons.repeat,
@@ -701,16 +701,28 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
           },
         ),
         const Divider(height: 16),
-        StringListEditor(
-          label:
-              'Relay Network Whitelist${hasWhitelist ? " (enabled)" : " (empty = allow all)"}',
-          hint: 'network-name',
-          items: _cfg.relayNetworkWhitelist,
+        _ToggleRow(
+          title: 'Restrict Relay Networks',
+          subtitle: 'When disabled, EasyTier keeps the default "*" relay whitelist.',
+          value: _cfg.enableRelayNetworkWhitelist,
           onChanged: (v) {
-            _cfg.relayNetworkWhitelist = v;
+            _cfg.enableRelayNetworkWhitelist = v;
+            if (!v) _cfg.relayNetworkWhitelist = [];
             _rebuild();
           },
         ),
+        if (_cfg.enableRelayNetworkWhitelist) ...[
+          const SizedBox(height: 12),
+          StringListEditor(
+            label: 'Relay Network Whitelist',
+            hint: 'network-name or prefix*',
+            items: _cfg.relayNetworkWhitelist,
+            onChanged: (v) {
+              _cfg.relayNetworkWhitelist = v;
+              _rebuild();
+            },
+          ),
+        ],
         const Divider(height: 16),
         _SectionSubtitle(text: 'Relay Protocol Control'),
         _ToggleRow(
@@ -777,35 +789,24 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
       children: [
         // DNS
         _ToggleRow(
-          title: 'Enable Magic DNS',
-          subtitle: 'Resolve peer hostnames within VPN',
-          value: _cfg.enableMagicDns,
+          title: 'Accept DNS',
+          subtitle: 'Enable EasyTier DNS handling and accept peer DNS records',
+          value: _cfg.acceptDns,
           onChanged: (v) {
+            _cfg.acceptDns = v;
             _cfg.enableMagicDns = v;
-            if (!v) _cfg.acceptDns = false;
             _rebuild();
           },
         ),
-        if (_cfg.enableMagicDns) ...[
-          _ToggleRow(
-            title: 'Accept DNS',
-            subtitle: 'Accept DNS records from other peers',
-            value: _cfg.acceptDns,
-            onChanged: (v) {
-              _cfg.acceptDns = v;
-              _rebuild();
-            },
-            indent: true,
-          ),
+        if (_cfg.acceptDns)
           _Field(
             label: 'TLD DNS Zone',
             hint: 'et',
             initial: _cfg.tldDnsZone,
-            helperText: 'Top-level domain zone for magic DNS',
+            helperText: 'Top-level domain used by EasyTier DNS, for example host.et',
             onSaved: (v) => _cfg.tldDnsZone = v ?? '',
             indent: true,
           ),
-        ],
         const Divider(height: 16),
         // SOCKS5
         _ToggleRow(
@@ -831,10 +832,10 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
         // VPN Portal (WireGuard)
         _Field(
           label: 'VPN Portal',
-          hint: '0.0.0.0:11012',
+          hint: 'udp://0.0.0.0:11012/10.14.14.0/24',
           initial: _cfg.vpnPortal,
           helperText:
-              'WireGuard-compatible portal (ip:port). Leave empty to disable',
+              'Full EasyTier portal URL: scheme://host:port/client-cidr',
           onSaved: (v) => _cfg.vpnPortal = v ?? '',
         ),
         const Divider(height: 16),
@@ -1273,12 +1274,6 @@ class _ToggleRow extends StatelessWidget {
               color: disabled ? cs.outline : null,
               decoration: disabled ? TextDecoration.lineThrough : null,
             )),
-        subtitle: subtitle != null
-            ? Text(subtitle!,
-                style: TextStyle(
-                    fontSize: 12,
-                    color: warn && value ? cs.error : cs.outline))
-            : null,
         value: value,
         onChanged: onChanged,
         contentPadding: EdgeInsets.zero,
@@ -1339,8 +1334,6 @@ class _Field extends StatelessWidget {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          helperText: helperText,
-          helperMaxLines: 2,
           border: const OutlineInputBorder(),
           isDense: true,
         ),

@@ -1,3 +1,4 @@
+import 'package:toml/toml.dart';
 import 'package:uuid/uuid.dart';
 
 /// Port forwarding rule: local bind → remote destination.
@@ -110,6 +111,7 @@ class NetworkConfig {
   // ── Relay ──
   bool relayAllPeerRpc;
   List<String> relayNetworkWhitelist;
+  bool enableRelayNetworkWhitelist;
   bool disableRelayKcp;
   bool disableRelayQuic;
   bool enableRelayForeignNetworkKcp;
@@ -159,6 +161,7 @@ class NetworkConfig {
 
   // ── App state ──
   bool autoStart;
+  bool serviceEnabled;
 
   NetworkConfig({
     String? id,
@@ -204,6 +207,7 @@ class NetworkConfig {
     this.p2pOnly = false,
     this.relayAllPeerRpc = false,
     List<String>? relayNetworkWhitelist,
+    this.enableRelayNetworkWhitelist = false,
     this.disableRelayKcp = false,
     this.disableRelayQuic = false,
     this.enableRelayForeignNetworkKcp = false,
@@ -218,13 +222,13 @@ class NetworkConfig {
     this.noTun = false,
     this.useSmoltcp = false,
     this.latencyFirst = false,
-    this.multiThread = false,
-    this.multiThreadCount = 0,
+    this.multiThread = true,
+    this.multiThreadCount = 2,
     this.mtu = 1380,
     this.instanceRecvBpsLimit = 0,
     this.compression = '',
     this.devName = '',
-    this.bindDevice = false,
+    this.bindDevice = true,
     List<String>? tcpWhitelist,
     List<String>? udpWhitelist,
     List<String>? stunServers,
@@ -237,6 +241,7 @@ class NetworkConfig {
     this.fileLogSizeMb = 0,
     this.fileLogCount = 0,
     this.autoStart = false,
+    this.serviceEnabled = false,
   })  : id = id ?? const Uuid().v4(),
         peerUrls = peerUrls ?? [],
         listeners = listeners ?? [],
@@ -298,6 +303,7 @@ class NetworkConfig {
         'p2p_only': p2pOnly,
         'relay_all_peer_rpc': relayAllPeerRpc,
         'relay_network_whitelist': relayNetworkWhitelist,
+        'enable_relay_network_whitelist': enableRelayNetworkWhitelist,
         'disable_relay_kcp': disableRelayKcp,
         'disable_relay_quic': disableRelayQuic,
         'enable_relay_foreign_network_kcp': enableRelayForeignNetworkKcp,
@@ -331,6 +337,7 @@ class NetworkConfig {
         'file_log_size_mb': fileLogSizeMb,
         'file_log_count': fileLogCount,
         'auto_start': autoStart,
+        'service_enabled': serviceEnabled,
       };
 
   factory NetworkConfig.fromJson(Map<String, dynamic> j) => NetworkConfig(
@@ -380,6 +387,8 @@ class NetworkConfig {
         p2pOnly: j['p2p_only'] as bool? ?? false,
         relayAllPeerRpc: j['relay_all_peer_rpc'] as bool? ?? false,
         relayNetworkWhitelist: _strList(j['relay_network_whitelist']),
+        enableRelayNetworkWhitelist:
+            j['enable_relay_network_whitelist'] as bool? ?? false,
         disableRelayKcp: j['disable_relay_kcp'] as bool? ?? false,
         disableRelayQuic: j['disable_relay_quic'] as bool? ?? false,
         enableRelayForeignNetworkKcp:
@@ -396,13 +405,13 @@ class NetworkConfig {
         noTun: j['no_tun'] as bool? ?? false,
         useSmoltcp: j['use_smoltcp'] as bool? ?? false,
         latencyFirst: j['latency_first'] as bool? ?? false,
-        multiThread: j['multi_thread'] as bool? ?? false,
-        multiThreadCount: j['multi_thread_count'] as int? ?? 0,
+        multiThread: j['multi_thread'] as bool? ?? true,
+        multiThreadCount: j['multi_thread_count'] as int? ?? 2,
         mtu: j['mtu'] as int? ?? 1380,
         instanceRecvBpsLimit: j['instance_recv_bps_limit'] as int? ?? 0,
         compression: j['compression'] as String? ?? '',
         devName: j['dev_name'] as String? ?? '',
-        bindDevice: j['bind_device'] as bool? ?? false,
+        bindDevice: j['bind_device'] as bool? ?? true,
         tcpWhitelist: _strList(j['tcp_whitelist']),
         udpWhitelist: _strList(j['udp_whitelist']),
         stunServers: _strList(j['stun_servers']),
@@ -415,6 +424,7 @@ class NetworkConfig {
         fileLogSizeMb: j['file_log_size_mb'] as int? ?? 0,
         fileLogCount: j['file_log_count'] as int? ?? 0,
         autoStart: j['auto_start'] as bool? ?? false,
+        serviceEnabled: j['service_enabled'] as bool? ?? false,
       );
 
   static List<String> _strList(dynamic v) {
@@ -518,7 +528,7 @@ class NetworkConfig {
 
     // Relay
     flag(relayAllPeerRpc, '--relay-all-peer-rpc');
-    if (relayNetworkWhitelist.isNotEmpty) {
+    if (enableRelayNetworkWhitelist) {
       a.addAll([
         '--relay-network-whitelist',
         relayNetworkWhitelist.join(','),
@@ -532,7 +542,6 @@ class NetworkConfig {
     optInt(foreignRelayBpsLimit, '--foreign-relay-bps-limit');
 
     // Features
-    flag(enableMagicDns, '--accept-dns');
     if (acceptDns) a.add('--accept-dns');
     opt(tldDnsZone, '--tld-dns-zone');
     if (enableSocks5) {
@@ -588,154 +597,195 @@ class NetworkConfig {
     return a;
   }
 
-  // ── TOML generation (matches easytier-core config file format) ──
+  factory NetworkConfig.fromToml(
+    String toml, {
+    String? id,
+    String configName = '',
+    bool autoStart = false,
+    bool serviceEnabled = false,
+  }) {
+    final values = TomlDocument.parse(toml).toMap();
+    return NetworkConfig(
+      id: id,
+      configName: configName,
+      autoStart: autoStart,
+      serviceEnabled: serviceEnabled,
+      networkName: _stringValue(values['network_name']),
+      networkSecret: _stringValue(values['network_secret']),
+      hostname: _stringValue(values['hostname']),
+      instanceName: _stringValue(values['instance_name']),
+      virtualIpv4: _stringValue(values['virtual_ipv4']),
+      virtualIpv6: _stringValue(values['virtual_ipv6']),
+      dhcp: _boolValue(values['dhcp'], true),
+      peerUrls: _stringListValue(values['peer_urls']),
+      listeners: _stringListValue(values['listeners']),
+      mappedListeners: _stringListValue(values['mapped_listeners']),
+      noListener: _boolValue(values['no_listener'], false),
+      externalNode: _stringValue(values['external_node']),
+      defaultProtocol: _stringValue(values['default_protocol']),
+      proxyCidrs: _stringListValue(values['proxy_cidrs']),
+      exitNodes: _stringListValue(values['exit_nodes']),
+      enableExitNode: _boolValue(values['enable_exit_node'], false),
+      proxyForwardBySystem:
+          _boolValue(values['proxy_forward_by_system'], false),
+      manualRoutes: _stringListValue(values['manual_routes']),
+      portForwards: _portForwardListValue(values['port_forward']),
+      enableKcpProxy: _boolValue(values['enable_kcp_proxy'], false),
+      disableKcpInput: _boolValue(values['disable_kcp_input'], false),
+      enableQuicProxy: _boolValue(values['enable_quic_proxy'], false),
+      disableQuicInput: _boolValue(values['disable_quic_input'], false),
+      disableIpv6: _boolValue(values['disable_ipv6'], false),
+      disableEncryption: _boolValue(values['disable_encryption'], false),
+      encryptionAlgorithm: _stringValue(values['encryption_algorithm']),
+      secureMode: _boolValue(values['secure_mode'], false),
+      localPrivateKey: _stringValue(values['local_private_key']),
+      localPublicKey: _stringValue(values['local_public_key']),
+      credential: _stringValue(values['credential']),
+      credentialFile: _stringValue(values['credential_file']),
+      privateMode: _boolValue(values['private_mode'], false),
+      disableP2p: _boolValue(values['disable_p2p'], false),
+      disableUdpHolePunching:
+          _boolValue(values['disable_udp_hole_punching'], false),
+      disableTcpHolePunching:
+          _boolValue(values['disable_tcp_hole_punching'], false),
+      disableSymHolePunching:
+          _boolValue(values['disable_sym_hole_punching'], false),
+      lazyP2p: _boolValue(values['lazy_p2p'], false),
+      needP2p: _boolValue(values['need_p2p'], false),
+      p2pOnly: _boolValue(values['p2p_only'], false),
+      relayAllPeerRpc: _boolValue(values['relay_all_peer_rpc'], false),
+      relayNetworkWhitelist:
+          _stringListValue(values['relay_network_whitelist']),
+      enableRelayNetworkWhitelist:
+          _boolValue(values['enable_relay_network_whitelist'], false),
+      disableRelayKcp: _boolValue(values['disable_relay_kcp'], false),
+      disableRelayQuic: _boolValue(values['disable_relay_quic'], false),
+      enableRelayForeignNetworkKcp:
+          _boolValue(values['enable_relay_foreign_network_kcp'], false),
+      enableRelayForeignNetworkQuic:
+          _boolValue(values['enable_relay_foreign_network_quic'], false),
+      foreignRelayBpsLimit: _intValue(values['foreign_relay_bps_limit']),
+      enableMagicDns: _boolValue(values['enable_magic_dns'], false),
+      acceptDns: _boolValue(values['accept_dns'], false),
+      tldDnsZone: _stringValue(values['tld_dns_zone']),
+      enableSocks5: _boolValue(values['enable_socks5'], false),
+      socks5Port: _intValue(values['socks5_port'], 1080),
+      vpnPortal: _stringValue(values['vpn_portal']),
+      noTun: _boolValue(values['no_tun'], false),
+      useSmoltcp: _boolValue(values['use_smoltcp'], false),
+      latencyFirst: _boolValue(values['latency_first'], false),
+      multiThread: _boolValue(values['multi_thread'], true),
+      multiThreadCount: _intValue(values['multi_thread_count'], 2),
+      mtu: _intValue(values['mtu'], 1380),
+      instanceRecvBpsLimit:
+          _intValue(values['instance_recv_bps_limit']),
+      compression: _stringValue(values['compression']),
+      devName: _stringValue(values['dev_name']),
+      bindDevice: _boolValue(values['bind_device'], true),
+      tcpWhitelist: _stringListValue(values['tcp_whitelist']),
+      udpWhitelist: _stringListValue(values['udp_whitelist']),
+      stunServers: _stringListValue(values['stun_servers']),
+      stunServersV6: _stringListValue(values['stun_servers_v6']),
+      rpcPort: _intValue(values['rpc_port'], 15888),
+      rpcPortalWhitelist:
+          _stringListValue(values['rpc_portal_whitelist']),
+      consoleLogLevel:
+          _stringValue(values['console_log_level'], 'info'),
+      fileLogLevel: _stringValue(values['file_log_level']),
+      fileLogDir: _stringValue(values['file_log_dir']),
+      fileLogSizeMb: _intValue(values['file_log_size_mb']),
+      fileLogCount: _intValue(values['file_log_count']),
+    );
+  }
+
+  // ── TOML generation (FlEasyTier storage format) ──
 
   String toToml() {
-    final b = StringBuffer();
-
-    if (hostname.isNotEmpty) b.writeln('hostname = "$hostname"');
-    if (instanceName.isNotEmpty) b.writeln('instance_name = "$instanceName"');
-    if (virtualIpv4.isNotEmpty) b.writeln('ipv4 = "$virtualIpv4"');
-    if (virtualIpv6.isNotEmpty) b.writeln('ipv6 = "$virtualIpv6"');
-    if (dhcp) b.writeln('dhcp = true');
-    if (listeners.isNotEmpty) {
-      b.writeln('listeners = [');
-      for (final l in listeners) {
-        b.writeln('  "$l",');
-      }
-      b.writeln(']');
-    }
-    if (mappedListeners.isNotEmpty) {
-      b.writeln('mapped_listeners = [');
-      for (final l in mappedListeners) {
-        b.writeln('  "$l",');
-      }
-      b.writeln(']');
-    }
-    b.writeln('rpc_portal = "127.0.0.1:$rpcPort"');
-    if (exitNodes.isNotEmpty) {
-      b.writeln('exit_nodes = [');
-      for (final n in exitNodes) {
-        b.writeln('  "$n",');
-      }
-      b.writeln(']');
-    }
-    if (proxyCidrs.isNotEmpty) {
-      b.writeln('proxy_networks = [');
-      for (final c in proxyCidrs) {
-        b.writeln('  "$c",');
-      }
-      b.writeln(']');
-    }
-    if (manualRoutes.isNotEmpty) {
-      b.writeln('routes = [');
-      for (final r in manualRoutes) {
-        b.writeln('  "$r",');
-      }
-      b.writeln(']');
-    }
-    if (tcpWhitelist.isNotEmpty) {
-      b.writeln(
-          'tcp_whitelist = [${tcpWhitelist.map((e) => '"$e"').join(', ')}]');
-    } else {
-      b.writeln('tcp_whitelist = []');
-    }
-    if (udpWhitelist.isNotEmpty) {
-      b.writeln(
-          'udp_whitelist = [${udpWhitelist.map((e) => '"$e"').join(', ')}]');
-    } else {
-      b.writeln('udp_whitelist = []');
-    }
-    if (vpnPortal.isNotEmpty) b.writeln('vpn_portal = "$vpnPortal"');
-
-    // Network identity
-    b.writeln();
-    b.writeln('[network_identity]');
-    b.writeln('network_name = "$networkName"');
-    b.writeln('network_secret = "$networkSecret"');
-
-    // Peers
-    for (final p in peerUrls) {
-      if (p.isNotEmpty) {
-        b.writeln();
-        b.writeln('[[peer]]');
-        b.writeln('uri = "$p"');
-      }
-    }
-
-    // Port forwards
-    for (final pf in portForwards) {
-      b.writeln();
-      b.writeln('[[port_forward]]');
-      b.writeln('bind = "${pf.bindIp}:${pf.bindPort}"');
-      b.writeln('dst = "${pf.dstIp}:${pf.dstPort}"');
-      b.writeln('proto = "${pf.proto}"');
-    }
-
-    // Flags
-    b.writeln();
-    b.writeln('[flags]');
-    if (devName.isNotEmpty) b.writeln('dev_name = "$devName"');
-    if (!disableEncryption) {
-      b.writeln('enable_encryption = true');
-    } else {
-      b.writeln('enable_encryption = false');
-    }
-    if (!disableIpv6) b.writeln('enable_ipv6 = true');
-    if (mtu != 1380) b.writeln('mtu = $mtu');
-    if (latencyFirst) b.writeln('latency_first = true');
-    if (enableExitNode) b.writeln('enable_exit_node = true');
-    if (noTun) b.writeln('no_tun = true');
-    if (useSmoltcp) b.writeln('use_smoltcp = true');
-    if (disableP2p) b.writeln('disable_p2p = true');
-    if (relayAllPeerRpc) b.writeln('relay_all_peer_rpc = true');
-    if (disableUdpHolePunching) b.writeln('disable_udp_hole_punching = true');
-    if (multiThread) b.writeln('multi_thread = true');
-    if (multiThreadCount > 0) {
-      b.writeln('multi_thread_count = $multiThreadCount');
-    }
-    if (enableKcpProxy) b.writeln('enable_kcp_proxy = true');
-    if (disableKcpInput) b.writeln('disable_kcp_input = true');
-    if (enableQuicProxy) b.writeln('enable_quic_proxy = true');
-    if (disableQuicInput) b.writeln('disable_quic_input = true');
-    if (proxyForwardBySystem) b.writeln('proxy_forward_by_system = true');
-    if (acceptDns) b.writeln('accept_dns = true');
-    if (privateMode) b.writeln('private_mode = true');
-    if (foreignRelayBpsLimit > 0) {
-      b.writeln('foreign_relay_bps_limit = $foreignRelayBpsLimit');
-    }
-    if (instanceRecvBpsLimit > 0) {
-      b.writeln('instance_recv_bps_limit = $instanceRecvBpsLimit');
-    }
-    if (encryptionAlgorithm.isNotEmpty) {
-      b.writeln('encryption_algorithm = "$encryptionAlgorithm"');
-    }
-    if (disableSymHolePunching) {
-      b.writeln('disable_sym_hole_punching = true');
-    }
-    if (tldDnsZone.isNotEmpty) b.writeln('tld_dns_zone = "$tldDnsZone"');
-    if (p2pOnly) b.writeln('p2p_only = true');
-    if (disableTcpHolePunching) {
-      b.writeln('disable_tcp_hole_punching = true');
-    }
-    if (disableRelayKcp) b.writeln('disable_relay_kcp = true');
-    if (disableRelayQuic) b.writeln('disable_relay_quic = true');
-    if (enableRelayForeignNetworkKcp) {
-      b.writeln('enable_relay_foreign_network_kcp = true');
-    }
-    if (enableRelayForeignNetworkQuic) {
-      b.writeln('enable_relay_foreign_network_quic = true');
-    }
-    if (lazyP2p) b.writeln('lazy_p2p = true');
-    if (needP2p) b.writeln('need_p2p = true');
-    if (bindDevice) b.writeln('bind_device = true');
-    if (compression.isNotEmpty) {
-      b.writeln('data_compress_algo = "$compression"');
-    }
-    if (noListener) b.writeln('no_listener = true');
-    if (enableSocks5) b.writeln('socks5 = $socks5Port');
-
-    return b.toString();
+    return TomlDocument.fromMap({
+      'format_version': 1,
+      'network_name': networkName,
+      'network_secret': networkSecret,
+      'hostname': hostname,
+      'instance_name': instanceName,
+      'virtual_ipv4': virtualIpv4,
+      'virtual_ipv6': virtualIpv6,
+      'dhcp': dhcp,
+      'peer_urls': peerUrls,
+      'listeners': listeners,
+      'mapped_listeners': mappedListeners,
+      'no_listener': noListener,
+      'external_node': externalNode,
+      'default_protocol': defaultProtocol,
+      'proxy_cidrs': proxyCidrs,
+      'exit_nodes': exitNodes,
+      'enable_exit_node': enableExitNode,
+      'proxy_forward_by_system': proxyForwardBySystem,
+      'manual_routes': manualRoutes,
+      'enable_kcp_proxy': enableKcpProxy,
+      'disable_kcp_input': disableKcpInput,
+      'enable_quic_proxy': enableQuicProxy,
+      'disable_quic_input': disableQuicInput,
+      'disable_ipv6': disableIpv6,
+      'disable_encryption': disableEncryption,
+      'encryption_algorithm': encryptionAlgorithm,
+      'secure_mode': secureMode,
+      'local_private_key': localPrivateKey,
+      'local_public_key': localPublicKey,
+      'credential': credential,
+      'credential_file': credentialFile,
+      'private_mode': privateMode,
+      'disable_p2p': disableP2p,
+      'disable_udp_hole_punching': disableUdpHolePunching,
+      'disable_tcp_hole_punching': disableTcpHolePunching,
+      'disable_sym_hole_punching': disableSymHolePunching,
+      'lazy_p2p': lazyP2p,
+      'need_p2p': needP2p,
+      'p2p_only': p2pOnly,
+      'relay_all_peer_rpc': relayAllPeerRpc,
+      'relay_network_whitelist': relayNetworkWhitelist,
+      'enable_relay_network_whitelist': enableRelayNetworkWhitelist,
+      'disable_relay_kcp': disableRelayKcp,
+      'disable_relay_quic': disableRelayQuic,
+      'enable_relay_foreign_network_kcp': enableRelayForeignNetworkKcp,
+      'enable_relay_foreign_network_quic': enableRelayForeignNetworkQuic,
+      'foreign_relay_bps_limit': foreignRelayBpsLimit,
+      'enable_magic_dns': enableMagicDns,
+      'accept_dns': acceptDns,
+      'tld_dns_zone': tldDnsZone,
+      'enable_socks5': enableSocks5,
+      'socks5_port': socks5Port,
+      'vpn_portal': vpnPortal,
+      'no_tun': noTun,
+      'use_smoltcp': useSmoltcp,
+      'latency_first': latencyFirst,
+      'multi_thread': multiThread,
+      'multi_thread_count': multiThreadCount,
+      'mtu': mtu,
+      'instance_recv_bps_limit': instanceRecvBpsLimit,
+      'compression': compression,
+      'dev_name': devName,
+      'bind_device': bindDevice,
+      'tcp_whitelist': tcpWhitelist,
+      'udp_whitelist': udpWhitelist,
+      'stun_servers': stunServers,
+      'stun_servers_v6': stunServersV6,
+      'rpc_port': rpcPort,
+      'rpc_portal_whitelist': rpcPortalWhitelist,
+      'console_log_level': consoleLogLevel,
+      'file_log_level': fileLogLevel,
+      'file_log_dir': fileLogDir,
+      'file_log_size_mb': fileLogSizeMb,
+      'file_log_count': fileLogCount,
+      'port_forward': portForwards
+          .map((pf) => {
+                'bind_ip': pf.bindIp,
+                'bind_port': pf.bindPort,
+                'dst_ip': pf.dstIp,
+                'dst_port': pf.dstPort,
+                'proto': pf.proto,
+              })
+          .toList(),
+    }).toString();
   }
 
   // ── copyWith ──
@@ -783,6 +833,7 @@ class NetworkConfig {
     bool? p2pOnly,
     bool? relayAllPeerRpc,
     List<String>? relayNetworkWhitelist,
+    bool? enableRelayNetworkWhitelist,
     bool? disableRelayKcp,
     bool? disableRelayQuic,
     bool? enableRelayForeignNetworkKcp,
@@ -816,6 +867,7 @@ class NetworkConfig {
     int? fileLogSizeMb,
     int? fileLogCount,
     bool? autoStart,
+    bool? serviceEnabled,
   }) {
     return NetworkConfig(
       id: id,
@@ -868,6 +920,8 @@ class NetworkConfig {
       relayAllPeerRpc: relayAllPeerRpc ?? this.relayAllPeerRpc,
       relayNetworkWhitelist:
           relayNetworkWhitelist ?? List.of(this.relayNetworkWhitelist),
+      enableRelayNetworkWhitelist:
+          enableRelayNetworkWhitelist ?? this.enableRelayNetworkWhitelist,
       disableRelayKcp: disableRelayKcp ?? this.disableRelayKcp,
       disableRelayQuic: disableRelayQuic ?? this.disableRelayQuic,
       enableRelayForeignNetworkKcp:
@@ -906,10 +960,54 @@ class NetworkConfig {
       fileLogSizeMb: fileLogSizeMb ?? this.fileLogSizeMb,
       fileLogCount: fileLogCount ?? this.fileLogCount,
       autoStart: autoStart ?? this.autoStart,
+      serviceEnabled: serviceEnabled ?? this.serviceEnabled,
     );
   }
 
-  String get displayName => configName.isNotEmpty
+String get displayName => configName.isNotEmpty
       ? configName
       : (networkName.isNotEmpty ? networkName : 'Unnamed');
+}
+
+String _stringValue(dynamic value, [String fallback = '']) {
+  if (value is String) return value;
+  return fallback;
+}
+
+bool _boolValue(dynamic value, [bool fallback = false]) {
+  if (value is bool) return value;
+  if (value is String) {
+    if (value == 'true') return true;
+    if (value == 'false') return false;
+  }
+  return fallback;
+}
+
+int _intValue(dynamic value, [int fallback = 0]) {
+  if (value is int) return value;
+  if (value is String) return int.tryParse(value) ?? fallback;
+  return fallback;
+}
+
+List<String> _stringListValue(dynamic value) {
+  if (value is List) {
+    return value.map((item) => item.toString()).toList();
+  }
+  return const [];
+}
+
+List<PortForwardConfig> _portForwardListValue(dynamic value) {
+  if (value is List) {
+    return value
+        .whereType<Map>()
+        .map((item) => PortForwardConfig(
+              bindIp: _stringValue(item['bind_ip'], '0.0.0.0'),
+              bindPort: _intValue(item['bind_port']),
+              dstIp: _stringValue(item['dst_ip']),
+              dstPort: _intValue(item['dst_port']),
+              proto: _stringValue(item['proto'], 'tcp'),
+            ))
+        .toList();
+  }
+  return const [];
 }

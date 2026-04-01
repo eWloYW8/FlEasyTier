@@ -57,6 +57,28 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+set(REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
+set(EASYTIER_EMBED_DIR "${PROJECT_BINARY_DIR}/embedded")
+set(EASYTIER_CORE_FILE "${EASYTIER_EMBED_DIR}/easytier-core")
+
+add_custom_command(
+  OUTPUT "${EASYTIER_CORE_FILE}"
+  COMMAND bash "${REPO_ROOT_DIR}/tool/prepare_easytier.sh"
+    "${REPO_ROOT_DIR}"
+    "${EASYTIER_EMBED_DIR}"
+  DEPENDS
+    "${REPO_ROOT_DIR}/tool/prepare_easytier.sh"
+    "${REPO_ROOT_DIR}/third_party/EasyTier/.git"
+  COMMENT "Building bundled easytier-core"
+  VERBATIM
+)
+
+add_custom_target(embedded_easytier ALL
+  DEPENDS "${EASYTIER_CORE_FILE}"
+)
+
+add_dependencies(${BINARY_NAME} embedded_easytier)
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -126,3 +148,6 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+install(FILES "${EASYTIER_CORE_FILE}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
