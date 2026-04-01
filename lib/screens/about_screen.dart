@@ -141,7 +141,9 @@ class _AboutScreenState extends State<AboutScreen> {
     final cs = Theme.of(context).colorScheme;
     final version = _packageInfo == null
         ? 'Loading...'
-        : '${_packageInfo!.version} (${_packageInfo!.buildNumber})';
+        : _packageInfo!.buildNumber.isEmpty
+            ? _packageInfo!.version
+            : '${_packageInfo!.version} (${_packageInfo!.buildNumber})';
 
     return Scaffold(
       appBar: AppBar(title: const Text('About')),
