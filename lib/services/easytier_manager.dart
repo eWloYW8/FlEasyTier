@@ -9,6 +9,7 @@ import '../models/network_config.dart';
 import '../models/network_instance.dart';
 import '../rpc/easytier_api.dart';
 import '../rpc/rpc_client.dart';
+import 'privileged_session.dart';
 
 typedef AppLogWriter = void Function(
   AppLogLevel level,
@@ -26,6 +27,8 @@ class EasyTierManager {
   final Map<String, StreamSubscription<int>> _exitSubs = {};
   final Map<String, List<String>> _processLogs = {};
   final Map<String, EasyTierApi> _rpcClients = {};
+  final Set<String> _privilegedProcesses = {};
+  final PrivilegedSession _privilegedSession = PrivilegedSession();
 
   void Function(String configId, int exitCode, String? detail)? onInstanceStopped;
   AppLogWriter? onLog;
@@ -144,18 +147,42 @@ class EasyTierManager {
 
   Future<String?> startInstance(NetworkConfig config) async {
     if (coreBinaryPath == null) return 'EasyTier core binary not found';
-    if (_processes.containsKey(config.id)) return 'Already running';
+    if (_processes.containsKey(config.id) || _privilegedProcesses.contains(config.id)) {
+      return 'Already running';
+    }
 
     try {
+      final usePrivileged = await _shouldUsePrivilegedLocalRun(config);
+      final args = _localCliArgs(
+        config,
+        includeFileLoggingFallback: usePrivileged,
+      );
       onLog?.call(
         AppLogLevel.info,
         'Starting network instance ${config.displayName}',
         category: 'Instance',
-        detail: config.toCliArgs().join(' '),
+        detail: args.join(' '),
       );
+
+      if (usePrivileged) {
+        await _ensureServiceLogDir(config);
+        final started = await _privilegedSession.startTrackedProcess(
+          key: config.id,
+          command: coreBinaryPath!,
+          args: args,
+          workingDirectory: _configDir,
+        );
+        if (!started.isSuccess) {
+          return started.error;
+        }
+        _privilegedProcesses.add(config.id);
+        _processLogs[config.id] = [];
+        return null;
+      }
+
       final process = await Process.start(
         coreBinaryPath!,
-        config.toCliArgs(),
+        args,
         mode: ProcessStartMode.normal,
       );
 
@@ -212,6 +239,12 @@ class EasyTierManager {
       'Stopping local instance $configId',
       category: 'Instance',
     );
+    if (_privilegedProcesses.remove(configId)) {
+      _processLogs.remove(configId);
+      _closeRpcClient(configId);
+      await _privilegedSession.stopTrackedProcess(configId);
+      return;
+    }
     final process = _processes.remove(configId);
     _exitSubs.remove(configId)?.cancel();
     _processLogs.remove(configId);
@@ -226,7 +259,18 @@ class EasyTierManager {
     }
   }
 
-  bool isRunning(String configId) => _processes.containsKey(configId);
+  bool isRunning(String configId) =>
+      _processes.containsKey(configId) || _privilegedProcesses.contains(configId);
+
+  Future<bool> isLocalRunning(String configId) async {
+    if (_processes.containsKey(configId)) return true;
+    if (!_privilegedProcesses.contains(configId)) return false;
+    final running = await _privilegedSession.isTrackedProcessRunning(configId);
+    if (!running) {
+      _privilegedProcesses.remove(configId);
+    }
+    return running;
+  }
 
   List<String> getLogs(String configId, {NetworkConfig? config}) {
     final processLogs = _processLogs[configId];
@@ -280,19 +324,14 @@ class EasyTierManager {
       if (!hasWintun) {
         return 'wintun.dll was not found next to easytier-core.exe';
       }
-
-      final elevated = await _isWindowsElevated();
-      if (!elevated) {
-        return 'Windows TUN mode requires Administrator privileges. Run FlEasyTier as Administrator, or enable No TUN / Use smoltcp.';
-      }
     }
 
     if (Platform.isLinux && !config.noTun && !config.useSmoltcp) {
-      final isRoot = Platform.environment['USER'] == 'root';
+      final isRoot = await _hasUnixRootPrivileges();
       if (!isRoot) {
         onLog?.call(
           AppLogLevel.warning,
-          'Linux TUN mode may require root or CAP_NET_ADMIN',
+          'TUN mode will request elevated privileges on start',
           category: 'Instance',
         );
       }
@@ -544,10 +583,14 @@ class EasyTierManager {
     for (final id in _processes.keys.toList()) {
       await stopInstance(id);
     }
+    for (final id in _privilegedProcesses.toList()) {
+      await stopInstance(id);
+    }
     for (final api in _rpcClients.values) {
       await api.close();
     }
     _rpcClients.clear();
+    await _privilegedSession.close();
   }
 
   Future<ServiceBackend> _detectServiceBackend() async {
@@ -1314,6 +1357,14 @@ class EasyTierManager {
     List<String> args, {
     bool allowPrivilegeRetry = false,
   }) async {
+    if (allowPrivilegeRetry && await _shouldUsePrivilegedSession()) {
+      return _privilegedSession.runProcess(
+        command,
+        args,
+        workingDirectory: _configDir,
+      );
+    }
+
     final result = await Process.run(
       command,
       args,
@@ -1321,16 +1372,14 @@ class EasyTierManager {
       stderrEncoding: utf8,
     );
     if (allowPrivilegeRetry &&
-        Platform.isWindows &&
-        !await _isWindowsElevated() &&
-        _looksLikeWindowsPermissionError(result)) {
-      return _runWindowsElevated(command, args);
-    }
-    if (allowPrivilegeRetry &&
-        !Platform.isWindows &&
-        !await _hasUnixRootPrivileges() &&
-        _looksLikeUnixPermissionError(result)) {
-      return _runElevatedShellScript(_shellCommand(command, args));
+        await _shouldUsePrivilegedSession() &&
+        (_looksLikeWindowsPermissionError(result) ||
+            _looksLikeUnixPermissionError(result))) {
+      return _privilegedSession.runProcess(
+        command,
+        args,
+        workingDirectory: _configDir,
+      );
     }
     return result;
   }
@@ -1379,13 +1428,6 @@ class EasyTierManager {
         output.contains('must be superuser');
   }
 
-  String _shellCommand(String command, List<String> args) {
-    final escapedArgs = args.map(_shellEscape).join(' ');
-    return escapedArgs.isEmpty
-        ? _shellEscape(command)
-        : '${_shellEscape(command)} $escapedArgs';
-  }
-
   Future<ProcessResult> _runElevatedShellScript(String scriptBody) async {
     if (Platform.isWindows) {
       return ProcessResult(
@@ -1395,178 +1437,19 @@ class EasyTierManager {
         'Elevated shell scripts are not supported on Windows by this helper',
       );
     }
-
-    final tempDir = await Directory.systemTemp.createTemp('fleasytier-elev-');
-    final scriptFile = File('${tempDir.path}${Platform.pathSeparator}run.sh');
-    final stdoutFile =
-        File('${tempDir.path}${Platform.pathSeparator}stdout.txt');
-    final stderrFile =
-        File('${tempDir.path}${Platform.pathSeparator}stderr.txt');
-    final exitFile = File('${tempDir.path}${Platform.pathSeparator}exit.txt');
-
-    await scriptFile.writeAsString([
-      '#!/bin/bash',
-      'set +e',
-      '{',
-      scriptBody,
-      "} >'${stdoutFile.path}' 2>'${stderrFile.path}'",
-      'code=\$?',
-      "printf '%s' \"\$code\" >'${exitFile.path}'",
-      'exit "\$code"',
-      '',
-    ].join('\n'));
-
-    try {
-      await Process.run('chmod', ['700', scriptFile.path]);
-    } catch (_) {}
-
-    ProcessResult launcher;
-    if (Platform.isLinux) {
-      final hasPkexec = await _commandExists('pkexec');
-      if (!hasPkexec) {
-        try {
-          await tempDir.delete(recursive: true);
-        } catch (_) {}
-        return ProcessResult(
-          0,
-          1,
-          '',
-          'pkexec is not available on this system',
-        );
-      }
-      launcher = await Process.run(
-        'pkexec',
-        ['/bin/bash', scriptFile.path],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-    } else if (Platform.isMacOS) {
-      final command = '/bin/bash ${_shellEscape(scriptFile.path)}';
-      launcher = await Process.run(
-        'osascript',
-        [
-          '-e',
-          'do shell script "${_appleScriptEscape(command)}" with administrator privileges',
-        ],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-    } else {
-      try {
-        await tempDir.delete(recursive: true);
-      } catch (_) {}
-      return ProcessResult(0, 1, '', 'Unsupported platform for elevation');
-    }
-
-    final stdout =
-        await stdoutFile.exists() ? await stdoutFile.readAsString() : '';
-    final stderr =
-        await stderrFile.exists() ? await stderrFile.readAsString() : '';
-    final exitCode = await exitFile.exists()
-        ? int.tryParse((await exitFile.readAsString()).trim()) ?? launcher.exitCode
-        : launcher.exitCode;
-
-    try {
-      await tempDir.delete(recursive: true);
-    } catch (_) {}
-
-    if (launcher.exitCode != 0 && exitCode == launcher.exitCode && stderr.isEmpty) {
-      return ProcessResult(
-        0,
-        launcher.exitCode,
-        stdout,
-        _mergedOutput(launcher),
+    if (await _shouldUsePrivilegedSession()) {
+      return _privilegedSession.runShell(
+        scriptBody,
+        workingDirectory: _configDir,
       );
     }
-
-    return ProcessResult(0, exitCode, stdout, stderr);
-  }
-
-  Future<ProcessResult> _runWindowsElevated(
-    String command,
-    List<String> args,
-  ) async {
-    final baseDir = await Directory.systemTemp.createTemp('fleasytier-elev-');
-    final stdoutFile = File('${baseDir.path}\\stdout.txt');
-    final stderrFile = File('${baseDir.path}\\stderr.txt');
-    final exitFile = File('${baseDir.path}\\exit.txt');
-    final scriptFile = File('${baseDir.path}\\run.ps1');
-
-    final psCommand = _psSingleQuote(command);
-    final psArgs = args.map(_psSingleQuote).map((arg) => "'$arg'").join(', ');
-    final psStdout = _psSingleQuote(stdoutFile.path);
-    final psStderr = _psSingleQuote(stderrFile.path);
-    final psExit = _psSingleQuote(exitFile.path);
-
-    await scriptFile.writeAsString([
-      "\$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(\$false)",
-      "\$ErrorActionPreference = 'Continue'",
-      "\$stdoutPath = '$psStdout'",
-      "\$stderrPath = '$psStderr'",
-      "\$exitPath = '$psExit'",
-      "\$command = '$psCommand'",
-      "\$args = @($psArgs)",
-      "\$stdout = New-Object System.Collections.Generic.List[string]",
-      "\$stderr = New-Object System.Collections.Generic.List[string]",
-      "\$code = 0",
-      "try {",
-      "  & \$command @args 2>&1 | ForEach-Object {",
-      "    if (\$_ -is [System.Management.Automation.ErrorRecord]) {",
-      "      [void]\$stderr.Add(\$_.ToString())",
-      "    } else {",
-      "      [void]\$stdout.Add(\$_.ToString())",
-      "    }",
-      "  }",
-      "  if (\$LASTEXITCODE -ne \$null) { \$code = [int]\$LASTEXITCODE }",
-      "} catch {",
-      "  [void]\$stderr.Add(\$_.Exception.Message)",
-      "  \$code = 1",
-      "}",
-      "[System.IO.File]::WriteAllText(\$stdoutPath, (\$stdout -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new(\$false))",
-      "[System.IO.File]::WriteAllText(\$stderrPath, (\$stderr -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new(\$false))",
-      "[System.IO.File]::WriteAllText(\$exitPath, \$code.ToString(), [System.Text.UTF8Encoding]::new(\$false))",
-    ].join('\r\n'));
-
-    final launcher = await Process.run(
-      'powershell',
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        "Start-Process powershell -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','${scriptFile.path.replaceAll("'", "''")}')",
-      ],
+    return Process.run(
+      '/bin/bash',
+      ['-lc', scriptBody],
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
+      workingDirectory: _configDir,
     );
-
-    if (launcher.exitCode != 0) {
-      final stderr = _mergedOutput(launcher);
-      return ProcessResult(
-        0,
-        launcher.exitCode,
-        '',
-        stderr.isNotEmpty ? stderr : 'Elevation request was cancelled or failed',
-      );
-    }
-
-    final stdout = await stdoutFile.exists() ? await stdoutFile.readAsString() : '';
-    final stderr = await stderrFile.exists() ? await stderrFile.readAsString() : '';
-    final exitCode = await exitFile.exists()
-        ? int.tryParse((await exitFile.readAsString()).trim()) ?? 1
-        : 1;
-
-    try {
-      await baseDir.delete(recursive: true);
-    } catch (_) {}
-
-    return ProcessResult(0, exitCode, stdout, stderr);
-  }
-
-  String _psSingleQuote(String value) => value.replaceAll("'", "''");
-
-  String _appleScriptEscape(String value) {
-    return value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
   }
 
   bool _isSuccessMessage(String msg) {
@@ -1575,17 +1458,25 @@ class EasyTierManager {
   }
 
   List<String> _serviceCliArgs(NetworkConfig config) {
-    final args = List<String>.from(config.toCliArgs());
-    final hasFileLogLevel = args.contains('--file-log-level');
-    final hasFileLogDir = args.contains('--file-log-dir');
-
-    if (!hasFileLogLevel) {
+    final args = <String>[
+      '-c',
+      tomlPathFor(config.id),
+      '--rpc-portal',
+      '127.0.0.1:${config.rpcPort}',
+    ];
+    if (config.rpcPortalWhitelist.isNotEmpty) {
       args.addAll([
-        '--file-log-level',
-        config.fileLogLevel.isNotEmpty ? config.fileLogLevel : 'info',
+        '--rpc-portal-whitelist',
+        config.rpcPortalWhitelist.join(','),
       ]);
     }
-    if (!hasFileLogDir) {
+    if (config.fileLogLevel.isEmpty) {
+      args.addAll([
+        '--file-log-level',
+        'info',
+      ]);
+    }
+    if (config.fileLogDir.isEmpty) {
       args.addAll([
         '--file-log-dir',
         _effectiveServiceLogDir(config),
@@ -1593,6 +1484,48 @@ class EasyTierManager {
     }
 
     return args;
+  }
+
+  List<String> _localCliArgs(
+    NetworkConfig config, {
+    bool includeFileLoggingFallback = false,
+  }) {
+    final args = <String>[
+      '-c',
+      tomlPathFor(config.id),
+      '--rpc-portal',
+      '127.0.0.1:${config.rpcPort}',
+    ];
+    if (config.rpcPortalWhitelist.isNotEmpty) {
+      args.addAll([
+        '--rpc-portal-whitelist',
+        config.rpcPortalWhitelist.join(','),
+      ]);
+    }
+    if (includeFileLoggingFallback && config.fileLogLevel.isEmpty) {
+      args.addAll(['--file-log-level', 'info']);
+    }
+    if (includeFileLoggingFallback && config.fileLogDir.isEmpty) {
+      args.addAll(['--file-log-dir', _effectiveServiceLogDir(config)]);
+    }
+    return args;
+  }
+
+  Future<bool> _shouldUsePrivilegedSession() async {
+    if (Platform.isWindows) {
+      return !await _isWindowsElevated();
+    }
+    if (Platform.isLinux || Platform.isMacOS) {
+      return !await _hasUnixRootPrivileges();
+    }
+    return false;
+  }
+
+  Future<bool> _shouldUsePrivilegedLocalRun(NetworkConfig config) async {
+    if (config.noTun || config.useSmoltcp || config.serviceEnabled) {
+      return false;
+    }
+    return _shouldUsePrivilegedSession();
   }
 
   String _effectiveServiceLogDir(NetworkConfig config) {

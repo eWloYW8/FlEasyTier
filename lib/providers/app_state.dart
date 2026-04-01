@@ -108,6 +108,19 @@ class AppState extends ChangeNotifier {
     await _manager.detectBinaries();
     _manager.onInstanceStopped = _onInstanceExit;
 
+    var normalizedConfigs = false;
+    for (int i = 0; i < _configs.length; i++) {
+      var normalized = _normalizeConfigForPlatform(_configs[i]);
+      normalized = _deduplicateRpcPort(normalized);
+      if (!identical(normalized, _configs[i])) {
+        _configs[i] = normalized;
+        normalizedConfigs = true;
+      }
+    }
+    if (normalizedConfigs) {
+      unawaited(_saveConfigs());
+    }
+
     if (savedSchemeVariant != _schemeVariant) {
       unawaited(_saveSettings());
     }
@@ -154,6 +167,8 @@ class AppState extends ChangeNotifier {
   }
 
   void addConfig(NetworkConfig config) {
+    config = _normalizeConfigForPlatform(config);
+    config = _deduplicateRpcPort(config);
     _configs.add(config);
     _selectedConfigId = config.id;
     addLog(
@@ -166,6 +181,8 @@ class AppState extends ChangeNotifier {
   }
 
   void updateConfig(NetworkConfig config) {
+    config = _normalizeConfigForPlatform(config);
+    config = _deduplicateRpcPort(config);
     final index = _configs.indexWhere((c) => c.id == config.id);
     if (index < 0) return;
     _configs[index] = config;
@@ -180,7 +197,7 @@ class AppState extends ChangeNotifier {
 
   void removeConfig(String id) {
     final removed = configById(id);
-    if (_manager.isRunning(id)) {
+    if (isRunning(id)) {
       unawaited(_manager.stopInstance(id));
     }
     _configs.removeWhere((c) => c.id == id);
@@ -263,9 +280,10 @@ class AppState extends ChangeNotifier {
       final parsed = NetworkConfig.fromToml(
         toml,
         id: current.id,
-        configName: current.configName,
         autoStart: current.autoStart,
         serviceEnabled: current.serviceEnabled,
+        rpcPort: current.rpcPort,
+        rpcPortalWhitelist: current.rpcPortalWhitelist,
       );
       updateConfig(parsed);
       addLog(
@@ -286,8 +304,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> startInstance(String configId) async {
-    final config = configById(configId);
-    if (config == null) return 'Config not found';
+    final currentConfig = configById(configId);
+    if (currentConfig == null) return 'Config not found';
+    final config = await _ensureRuntimeRpcPort(currentConfig, operation: 'start');
     addLog(
       AppLogLevel.info,
       'Start requested for ${config.displayName}',
@@ -314,6 +333,18 @@ class AppState extends ChangeNotifier {
     }
 
     if (_supportsSystemService && config.serviceEnabled) {
+      final syncMsg = await _manager.installService(config);
+      if (!_isSuccessMessage(syncMsg)) {
+        final inst = _instances.putIfAbsent(
+          configId,
+          () => NetworkInstance(configId: configId),
+        );
+        inst.running = false;
+        inst.managedByService = true;
+        inst.errorMessage = syncMsg;
+        notifyListeners();
+        return syncMsg;
+      }
       final msg = await _manager.startService(config);
       if (!_isSuccessMessage(msg)) {
         final inst = _instances.putIfAbsent(
@@ -357,6 +388,19 @@ class AppState extends ChangeNotifier {
           category: 'VPN',
         );
         return 'VPN permission denied';
+      }
+
+      if (Platform.isAndroid) {
+        for (final other in _configs.where(
+          (item) => item.id != configId && (_instances[item.id]?.running ?? false),
+        )) {
+          addLog(
+            AppLogLevel.info,
+            'Android VPN only supports one active network, stopping ${other.displayName}',
+            category: 'VPN',
+          );
+          await stopInstance(other.id);
+        }
       }
 
       final ip =
@@ -405,20 +449,20 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> stopInstance(String configId) async {
-    final config = configById(configId);
+    final activeConfig = configById(configId);
     final inst = _instances[configId];
-    if (config != null) {
+    if (activeConfig != null) {
       addLog(
         AppLogLevel.info,
-        'Stop requested for ${config.displayName}',
+        'Stop requested for ${activeConfig.displayName}',
         category: 'Instance',
       );
     }
 
-    if (config != null &&
+    if (activeConfig != null &&
         _supportsSystemService &&
         inst?.managedByService == true) {
-      final msg = await _manager.stopService(config);
+      final msg = await _manager.stopService(activeConfig);
       if (!_isSuccessMessage(msg)) {
         inst?.errorMessage = msg;
         notifyListeners();
@@ -435,10 +479,10 @@ class AppState extends ChangeNotifier {
       inst.running = false;
       inst.errorMessage = null;
     }
-    if (config != null) {
+    if (activeConfig != null) {
       addLog(
         AppLogLevel.info,
-        'Stopped ${config.displayName}',
+        'Stopped ${activeConfig.displayName}',
         category: inst?.managedByService == true ? 'Service' : 'Instance',
       );
     }
@@ -454,8 +498,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String> installService(String configId) async {
-    final config = configById(configId);
+    if (!_supportsSystemService) {
+      return 'System services are only supported on Windows, macOS, and Linux';
+    }
+    var config = configById(configId);
     if (config == null) return 'Config not found';
+    config = await _ensureRuntimeRpcPort(config, operation: 'install service');
     final msg = await _manager.installService(config);
     if (_isSuccessMessage(msg)) {
       updateConfig(config.copyWith(serviceEnabled: true));
@@ -469,6 +517,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String> uninstallService(String configId) async {
+    if (!_supportsSystemService) {
+      return 'System services are only supported on Windows, macOS, and Linux';
+    }
     final config = configById(configId);
     if (config == null) return 'Config not found';
     final msg = await _manager.uninstallService(config);
@@ -489,6 +540,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<ManagedServiceStatus> serviceStatus(String configId) async {
+    if (!_supportsSystemService) return ManagedServiceStatus.notInstalled;
     final config = configById(configId);
     if (config == null) return ManagedServiceStatus.notInstalled;
     return _manager.getServiceStatus(config);
@@ -498,9 +550,16 @@ class AppState extends ChangeNotifier {
     bool changed = false;
 
     for (final config in _configs) {
-      if (_manager.isRunning(config.id)) {
+      if (await _manager.isLocalRunning(config.id)) {
         if (await _pollSingle(config)) changed = true;
         continue;
+      }
+
+      final localInst = _instances[config.id];
+      if (localInst?.managedByService != true && localInst?.running == true) {
+        localInst!.running = false;
+        localInst.errorMessage = null;
+        changed = true;
       }
 
       if (_supportsSystemService && config.serviceEnabled) {
@@ -730,6 +789,101 @@ class AppState extends ChangeNotifier {
   bool _isSuccessMessage(String msg) {
     final lower = msg.toLowerCase();
     return !lower.startsWith('failed') && !lower.startsWith('error');
+  }
+
+  NetworkConfig _normalizeConfigForPlatform(NetworkConfig config) {
+    if (_supportsSystemService) return config;
+    if (!config.serviceEnabled) return config;
+    return config.copyWith(serviceEnabled: false);
+  }
+
+  NetworkConfig _deduplicateRpcPort(NetworkConfig config) {
+    var desired = config.rpcPort;
+    if (desired <= 0) desired = 15888;
+    final usedPorts = _configs
+        .where((item) => item.id != config.id)
+        .map((item) => item.rpcPort)
+        .where((port) => port > 0)
+        .toSet();
+    var next = desired;
+    while (usedPorts.contains(next)) {
+      next++;
+    }
+    if (next == config.rpcPort) return config;
+    addLog(
+      AppLogLevel.info,
+      'Adjusted RPC port for ${config.displayName}',
+      category: 'RPC',
+      detail: '${config.rpcPort} -> $next',
+    );
+    return config.copyWith(rpcPort: next);
+  }
+
+  Future<NetworkConfig> _ensureRuntimeRpcPort(
+    NetworkConfig config, {
+    required String operation,
+  }) async {
+    var updated = _deduplicateRpcPort(config);
+    if (updated.rpcPort <= 0) {
+      updated = updated.copyWith(rpcPort: 15888);
+    }
+
+    if (await _canBindRpcPort(updated.rpcPort)) {
+      if (updated.rpcPort != config.rpcPort) {
+        updateConfig(updated);
+      }
+      return updated;
+    }
+
+    final next = await _findAvailableRpcPort(
+      preferred: updated.rpcPort + 1,
+      excludeConfigId: updated.id,
+    );
+    final reassigned = updated.copyWith(rpcPort: next);
+    addLog(
+      AppLogLevel.warning,
+      'RPC port ${updated.rpcPort} is unavailable for ${updated.displayName}',
+      category: 'RPC',
+      detail: 'Reassigned to $next before $operation',
+    );
+    updateConfig(reassigned);
+    return reassigned;
+  }
+
+  Future<int> _findAvailableRpcPort({
+    required int preferred,
+    required String excludeConfigId,
+  }) async {
+    var port = preferred <= 0 ? 15888 : preferred;
+    final usedPorts = _configs
+        .where((item) => item.id != excludeConfigId)
+        .map((item) => item.rpcPort)
+        .where((value) => value > 0)
+        .toSet();
+    while (usedPorts.contains(port) || !await _canBindRpcPort(port)) {
+      port++;
+      if (port > 65535) {
+        port = 15888;
+      }
+    }
+    return port;
+  }
+
+  Future<bool> _canBindRpcPort(int port) async {
+    if (port <= 0 || port > 65535) return false;
+    ServerSocket? socket;
+    try {
+      socket = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        port,
+        shared: false,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      await socket?.close();
+    }
   }
 
   @override

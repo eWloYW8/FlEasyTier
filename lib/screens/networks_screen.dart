@@ -245,13 +245,10 @@ Future<void> _showTomlImportDialog(BuildContext context, AppState state) async {
     final imported = NetworkConfig.fromToml(
       toml,
       id: fallbackConfig.id,
-      configName: fallbackConfig.configName,
       autoStart: false,
       serviceEnabled: false,
+      rpcPort: fallbackConfig.rpcPort,
     );
-    if (imported.rpcPort <= 0) {
-      imported.rpcPort = fallbackConfig.rpcPort;
-    }
     state.addConfig(imported);
   } catch (e) {
     if (!context.mounted) return;
@@ -312,13 +309,10 @@ Future<void> _showNewTomlEditor(BuildContext context, AppState state) async {
                 final parsed = NetworkConfig.fromToml(
                   ctrl.text,
                   id: draft.id,
-                  configName: draft.configName,
                   autoStart: false,
                   serviceEnabled: false,
+                  rpcPort: draft.rpcPort,
                 );
-                if (parsed.rpcPort <= 0) {
-                  parsed.rpcPort = draft.rpcPort;
-                }
                 state.addConfig(parsed);
                 Navigator.pop(ctx);
               } catch (e) {

@@ -8,8 +8,14 @@ import 'package:window_manager/window_manager.dart';
 import 'app.dart';
 import 'models/app_log_entry.dart';
 import 'providers/app_state.dart';
+import 'services/privileged_session.dart';
 
-void main() async {
+void main(List<String> args) async {
+  if (args.contains('--privileged-helper')) {
+    final exitCode = await PrivilegedSession.runHelper(args);
+    exit(exitCode);
+  }
+
   WidgetsFlutterBinding.ensureInitialized();
 
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {

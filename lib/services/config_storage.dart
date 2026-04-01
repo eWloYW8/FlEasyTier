@@ -24,15 +24,10 @@ class ConfigStorage {
   String configMetaPath(String configId) =>
       '$_configsDir${Platform.pathSeparator}$configId.meta.json';
 
-  String get _legacyConfigFile =>
-      '$_dataDir${Platform.pathSeparator}configs.json';
-
   String get _settingsFile =>
       '$_dataDir${Platform.pathSeparator}settings.json';
 
   Future<List<NetworkConfig>> loadConfigs() async {
-    await _migrateLegacyConfigsIfNeeded();
-
     final dir = Directory(_configsDir);
     if (!await dir.exists()) return [];
 
@@ -52,9 +47,11 @@ class ConfigStorage {
         configs.add(NetworkConfig.fromToml(
           toml,
           id: meta['id'] as String? ?? configId,
-          configName: meta['config_name'] as String? ?? '',
           autoStart: meta['auto_start'] as bool? ?? false,
           serviceEnabled: meta['service_enabled'] as bool? ?? false,
+          rpcPort: meta['rpc_port'] as int? ?? 15888,
+          rpcPortalWhitelist:
+              (meta['rpc_portal_whitelist'] as List?)?.map((e) => '$e').toList(),
         ));
       } catch (_) {
         // Skip malformed files so one bad config does not block the app.
@@ -85,9 +82,10 @@ class ConfigStorage {
       await File(configMetaPath(config.id))
           .writeAsString(const JsonEncoder.withIndent('  ').convert({
         'id': config.id,
-        'config_name': config.configName,
         'auto_start': config.autoStart,
         'service_enabled': config.serviceEnabled,
+        'rpc_port': config.rpcPort,
+        'rpc_portal_whitelist': config.rpcPortalWhitelist,
       }));
     }
   }
@@ -114,36 +112,6 @@ class ConfigStorage {
       return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
     } catch (_) {
       return {};
-    }
-  }
-
-  Future<void> _migrateLegacyConfigsIfNeeded() async {
-    final legacyFile = File(_legacyConfigFile);
-    if (!await legacyFile.exists()) return;
-
-    final hasTomlFiles = await Directory(_configsDir)
-        .list()
-        .any((entity) => entity is File && entity.path.endsWith('.toml'));
-    if (hasTomlFiles) return;
-
-    try {
-      final decoded = jsonDecode(await legacyFile.readAsString());
-      if (decoded is! List) return;
-
-      final configs = decoded
-          .whereType<Map<String, dynamic>>()
-          .map(NetworkConfig.fromJson)
-          .toList();
-      await saveConfigs(configs);
-
-      final backupPath =
-          '$_dataDir${Platform.pathSeparator}configs.json.migrated.bak';
-      if (await File(backupPath).exists()) {
-        await File(backupPath).delete();
-      }
-      await legacyFile.rename(backupPath);
-    } catch (_) {
-      // Keep legacy file untouched if migration fails.
     }
   }
 

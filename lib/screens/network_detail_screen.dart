@@ -233,11 +233,13 @@ class _MoreMenu extends StatelessWidget {
           case 'edit':
             _editConfig(context, config);
           case 'duplicate':
-            final json = config.copyWith(
-              configName: '${config.displayName} (copy)',
-            ).toJson();
+            final json = config.toJson();
             json.remove('id'); // force new UUID
-            state.addConfig(NetworkConfig.fromJson(json));
+            final duplicated = NetworkConfig.fromJson(json);
+            duplicated.instanceName = config.instanceName.isNotEmpty
+                ? '${config.instanceName}-copy'
+                : '${config.displayName}-copy';
+            state.addConfig(duplicated);
           case 'toml':
             _showTomlEditor(context, config);
           case 'delete':

@@ -1,1013 +1,1045 @@
 import 'package:toml/toml.dart';
 import 'package:uuid/uuid.dart';
 
-/// Port forwarding rule: local bind → remote destination.
-class PortForwardConfig {
-  String bindIp;
-  int bindPort;
-  String dstIp;
-  int dstPort;
-  String proto; // tcp | udp
+const _uuid = Uuid();
+final Map<String, dynamic> _defaultFlags = {
+  'default_protocol': 'tcp',
+  'dev_name': '',
+  'enable_encryption': true,
+  'enable_ipv6': true,
+  'mtu': 1380,
+  'latency_first': false,
+  'enable_exit_node': false,
+  'proxy_forward_by_system': false,
+  'no_tun': false,
+  'use_smoltcp': false,
+  'relay_network_whitelist': '*',
+  'disable_p2p': false,
+  'p2p_only': false,
+  'lazy_p2p': false,
+  'relay_all_peer_rpc': false,
+  'disable_tcp_hole_punching': false,
+  'disable_udp_hole_punching': false,
+  'multi_thread': true,
+  'data_compress_algo': 1,
+  'bind_device': true,
+  'enable_kcp_proxy': false,
+  'disable_kcp_input': false,
+  'disable_relay_kcp': false,
+  'enable_relay_foreign_network_kcp': false,
+  'accept_dns': false,
+  'private_mode': false,
+  'enable_quic_proxy': false,
+  'disable_quic_input': false,
+  'disable_relay_quic': false,
+  'enable_relay_foreign_network_quic': false,
+  'multi_thread_count': 2,
+  'encryption_algorithm': 'aes-gcm',
+  'disable_sym_hole_punching': false,
+  'tld_dns_zone': 'et.net.',
+  'quic_listen_port': 4294967295,
+  'need_p2p': false,
+};
 
-  PortForwardConfig({
-    this.bindIp = '0.0.0.0',
-    this.bindPort = 0,
-    this.dstIp = '',
-    this.dstPort = 0,
-    this.proto = 'tcp',
+class OfficialPeerConfig {
+  String uri;
+  String peerPublicKey;
+
+  OfficialPeerConfig({
+    this.uri = '',
+    this.peerPublicKey = '',
   });
 
+  factory OfficialPeerConfig.fromTomlMap(Map<String, dynamic> map) =>
+      OfficialPeerConfig(
+        uri: _asString(map['uri']),
+        peerPublicKey: _asString(map['peer_public_key']),
+      );
+
+  OfficialPeerConfig copy() => OfficialPeerConfig(
+        uri: uri,
+        peerPublicKey: peerPublicKey,
+      );
+
+  Map<String, dynamic> toTomlMap() {
+    final map = <String, dynamic>{};
+    if (uri.trim().isNotEmpty) map['uri'] = uri.trim();
+    if (peerPublicKey.trim().isNotEmpty) {
+      map['peer_public_key'] = peerPublicKey.trim();
+    }
+    return map;
+  }
+}
+
+class OfficialProxyNetworkConfig {
+  String cidr;
+  String mappedCidr;
+  List<String> allow;
+
+  OfficialProxyNetworkConfig({
+    this.cidr = '',
+    this.mappedCidr = '',
+    List<String>? allow,
+  }) : allow = allow ?? <String>[];
+
+  factory OfficialProxyNetworkConfig.fromTomlMap(Map<String, dynamic> map) =>
+      OfficialProxyNetworkConfig(
+        cidr: _asString(map['cidr']),
+        mappedCidr: _asString(map['mapped_cidr']),
+        allow: _asStringList(map['allow']),
+      );
+
+  OfficialProxyNetworkConfig copy() => OfficialProxyNetworkConfig(
+        cidr: cidr,
+        mappedCidr: mappedCidr,
+        allow: List<String>.from(allow),
+      );
+
+  Map<String, dynamic> toTomlMap() {
+    final map = <String, dynamic>{};
+    if (cidr.trim().isNotEmpty) map['cidr'] = cidr.trim();
+    if (mappedCidr.trim().isNotEmpty) map['mapped_cidr'] = mappedCidr.trim();
+    if (allow.isNotEmpty) {
+      map['allow'] =
+          allow.map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
+    }
+    return map;
+  }
+}
+
+class PortForwardConfig {
+  String bindAddr;
+  String dstAddr;
+  String proto;
+
+  PortForwardConfig({
+    String? bindAddr,
+    String? dstAddr,
+    String bindIp = '0.0.0.0',
+    int bindPort = 0,
+    String dstIp = '',
+    int dstPort = 0,
+    this.proto = 'tcp',
+  })  : bindAddr = bindAddr ?? _joinHostPort(bindIp, bindPort),
+        dstAddr = dstAddr ?? _joinHostPort(dstIp, dstPort);
+
+  factory PortForwardConfig.fromTomlMap(Map<String, dynamic> map) =>
+      PortForwardConfig(
+        bindAddr: _asString(map['bind_addr']),
+        dstAddr: _asString(map['dst_addr']),
+        proto: _asString(map['proto'], fallback: 'tcp'),
+      );
+
   PortForwardConfig copy() => PortForwardConfig(
-        bindIp: bindIp,
-        bindPort: bindPort,
-        dstIp: dstIp,
-        dstPort: dstPort,
+        bindAddr: bindAddr,
+        dstAddr: dstAddr,
         proto: proto,
       );
 
-  Map<String, dynamic> toJson() => {
-        'bind_ip': bindIp,
-        'bind_port': bindPort,
-        'dst_ip': dstIp,
-        'dst_port': dstPort,
-        'proto': proto,
-      };
+  Map<String, dynamic> toTomlMap() {
+    final map = <String, dynamic>{};
+    if (bindAddr.trim().isNotEmpty) map['bind_addr'] = bindAddr.trim();
+    if (dstAddr.trim().isNotEmpty) map['dst_addr'] = dstAddr.trim();
+    if (proto.trim().isNotEmpty) map['proto'] = proto.trim();
+    return map;
+  }
 
-  factory PortForwardConfig.fromJson(Map<String, dynamic> j) =>
-      PortForwardConfig(
-        bindIp: j['bind_ip'] as String? ?? '0.0.0.0',
-        bindPort: j['bind_port'] as int? ?? 0,
-        dstIp: j['dst_ip'] as String? ?? '',
-        dstPort: j['dst_port'] as int? ?? 0,
-        proto: j['proto'] as String? ?? 'tcp',
-      );
+  String get bindIp => _splitHostPort(bindAddr).$1;
+  set bindIp(String value) => bindAddr = _joinHostPort(value, bindPort);
 
-  /// Format for --port-forward: proto://bind_ip:bind_port/dst_ip:dst_port
-  String toCliUrl() => '$proto://$bindIp:$bindPort/$dstIp:$dstPort';
+  int get bindPort => _splitHostPort(bindAddr).$2;
+  set bindPort(int value) => bindAddr = _joinHostPort(bindIp, value);
 
-  String get displayText => '$proto  $bindIp:$bindPort → $dstIp:$dstPort';
+  String get dstIp => _splitHostPort(dstAddr).$1;
+  set dstIp(String value) => dstAddr = _joinHostPort(value, dstPort);
+
+  int get dstPort => _splitHostPort(dstAddr).$2;
+  set dstPort(int value) => dstAddr = _joinHostPort(dstIp, value);
+
+  String get displayText => '$proto  $bindAddr -> $dstAddr';
 }
 
-/// Full EasyTier network configuration covering all CLI flags.
 class NetworkConfig {
   final String id;
+  final Map<String, dynamic> _tomlData;
+  String configName = '';
+  String externalNode = '';
+  String credential = '';
 
-  // ── Identity ──
-  String configName;
-  String networkName;
-  String networkSecret;
-  String hostname;
-  String instanceName;
-
-  // ── IP ──
-  String virtualIpv4;
-  String virtualIpv6;
-  bool dhcp;
-
-  // ── Connectivity ──
-  List<String> peerUrls;
-  List<String> listeners;
-  List<String> mappedListeners;
-  bool noListener;
-  String externalNode;
-  String defaultProtocol;
-
-  // ── Proxy & Routing ──
-  List<String> proxyCidrs;
-  List<String> exitNodes;
-  bool enableExitNode;
-  bool proxyForwardBySystem;
-  List<String> manualRoutes;
-
-  // ── Port Forwarding ──
-  List<PortForwardConfig> portForwards;
-
-  // ── Tunnel Protocols ──
-  bool enableKcpProxy;
-  bool disableKcpInput;
-  bool enableQuicProxy;
-  bool disableQuicInput;
-  bool disableIpv6;
-
-  // ── Security & Encryption ──
-  bool disableEncryption;
-  String encryptionAlgorithm; // '' | 'aes-gcm' | 'chacha20-poly1305'
-  bool secureMode;
-  String localPrivateKey;
-  String localPublicKey;
-  String credential;
-  String credentialFile;
-  bool privateMode;
-
-  // ── P2P & NAT ──
-  bool disableP2p;
-  bool disableUdpHolePunching;
-  bool disableTcpHolePunching;
-  bool disableSymHolePunching;
-  bool lazyP2p;
-  bool needP2p;
-  bool p2pOnly;
-
-  // ── Relay ──
-  bool relayAllPeerRpc;
-  List<String> relayNetworkWhitelist;
-  bool enableRelayNetworkWhitelist;
-  bool disableRelayKcp;
-  bool disableRelayQuic;
-  bool enableRelayForeignNetworkKcp;
-  bool enableRelayForeignNetworkQuic;
-  int foreignRelayBpsLimit;
-
-  // ── Features ──
-  bool enableMagicDns;
-  bool acceptDns;
-  String tldDnsZone;
-  bool enableSocks5;
-  int socks5Port;
-  String vpnPortal; // ip:port for WireGuard portal
-  bool noTun;
-  bool useSmoltcp;
-
-  // ── Performance ──
-  bool latencyFirst;
-  bool multiThread;
-  int multiThreadCount;
-  int mtu;
-  int instanceRecvBpsLimit;
-  String compression; // '' | 'zstd'
-
-  // ── Device ──
-  String devName;
-  bool bindDevice;
-
-  // ── Whitelists ──
-  List<String> tcpWhitelist;
-  List<String> udpWhitelist;
-
-  // ── STUN ──
-  List<String> stunServers;
-  List<String> stunServersV6;
-
-  // ── RPC ──
+  bool autoStart;
+  bool serviceEnabled;
   int rpcPort;
   List<String> rpcPortalWhitelist;
 
-  // ── Logging ──
-  String consoleLogLevel;
-  String fileLogLevel;
-  String fileLogDir;
-  int fileLogSizeMb;
-  int fileLogCount;
-
-  // ── App state ──
-  bool autoStart;
-  bool serviceEnabled;
-
   NetworkConfig({
     String? id,
-    this.configName = '',
-    this.networkName = '',
-    this.networkSecret = '',
-    this.hostname = '',
-    this.instanceName = '',
-    this.virtualIpv4 = '',
-    this.virtualIpv6 = '',
-    this.dhcp = true,
-    List<String>? peerUrls,
-    List<String>? listeners,
-    List<String>? mappedListeners,
-    this.noListener = false,
-    this.externalNode = '',
-    this.defaultProtocol = '',
-    List<String>? proxyCidrs,
-    List<String>? exitNodes,
-    this.enableExitNode = false,
-    this.proxyForwardBySystem = false,
-    List<String>? manualRoutes,
-    List<PortForwardConfig>? portForwards,
-    this.enableKcpProxy = false,
-    this.disableKcpInput = false,
-    this.enableQuicProxy = false,
-    this.disableQuicInput = false,
-    this.disableIpv6 = false,
-    this.disableEncryption = false,
-    this.encryptionAlgorithm = '',
-    this.secureMode = false,
-    this.localPrivateKey = '',
-    this.localPublicKey = '',
-    this.credential = '',
-    this.credentialFile = '',
-    this.privateMode = false,
-    this.disableP2p = false,
-    this.disableUdpHolePunching = false,
-    this.disableTcpHolePunching = false,
-    this.disableSymHolePunching = false,
-    this.lazyP2p = false,
-    this.needP2p = false,
-    this.p2pOnly = false,
-    this.relayAllPeerRpc = false,
-    List<String>? relayNetworkWhitelist,
-    this.enableRelayNetworkWhitelist = false,
-    this.disableRelayKcp = false,
-    this.disableRelayQuic = false,
-    this.enableRelayForeignNetworkKcp = false,
-    this.enableRelayForeignNetworkQuic = false,
-    this.foreignRelayBpsLimit = 0,
-    this.enableMagicDns = false,
-    this.acceptDns = false,
-    this.tldDnsZone = '',
-    this.enableSocks5 = false,
-    this.socks5Port = 1080,
-    this.vpnPortal = '',
-    this.noTun = false,
-    this.useSmoltcp = false,
-    this.latencyFirst = false,
-    this.multiThread = true,
-    this.multiThreadCount = 2,
-    this.mtu = 1380,
-    this.instanceRecvBpsLimit = 0,
-    this.compression = '',
-    this.devName = '',
-    this.bindDevice = true,
-    List<String>? tcpWhitelist,
-    List<String>? udpWhitelist,
-    List<String>? stunServers,
-    List<String>? stunServersV6,
-    this.rpcPort = 15888,
-    List<String>? rpcPortalWhitelist,
-    this.consoleLogLevel = 'info',
-    this.fileLogLevel = '',
-    this.fileLogDir = '',
-    this.fileLogSizeMb = 0,
-    this.fileLogCount = 0,
+    Map<String, dynamic>? tomlData,
     this.autoStart = false,
     this.serviceEnabled = false,
-  })  : id = id ?? const Uuid().v4(),
-        peerUrls = peerUrls ?? [],
-        listeners = listeners ?? [],
-        mappedListeners = mappedListeners ?? [],
-        proxyCidrs = proxyCidrs ?? [],
-        exitNodes = exitNodes ?? [],
-        manualRoutes = manualRoutes ?? [],
-        portForwards = portForwards ?? [],
-        relayNetworkWhitelist = relayNetworkWhitelist ?? [],
-        tcpWhitelist = tcpWhitelist ?? [],
-        udpWhitelist = udpWhitelist ?? [],
-        stunServers = stunServers ?? [],
-        stunServersV6 = stunServersV6 ?? [],
-        rpcPortalWhitelist = rpcPortalWhitelist ?? [];
-
-  // ── JSON serialization ──
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'config_name': configName,
-        'network_name': networkName,
-        'network_secret': networkSecret,
-        'hostname': hostname,
-        'instance_name': instanceName,
-        'virtual_ipv4': virtualIpv4,
-        'virtual_ipv6': virtualIpv6,
-        'dhcp': dhcp,
-        'peer_urls': peerUrls,
-        'listeners': listeners,
-        'mapped_listeners': mappedListeners,
-        'no_listener': noListener,
-        'external_node': externalNode,
-        'default_protocol': defaultProtocol,
-        'proxy_cidrs': proxyCidrs,
-        'exit_nodes': exitNodes,
-        'enable_exit_node': enableExitNode,
-        'proxy_forward_by_system': proxyForwardBySystem,
-        'manual_routes': manualRoutes,
-        'port_forwards': portForwards.map((e) => e.toJson()).toList(),
-        'enable_kcp_proxy': enableKcpProxy,
-        'disable_kcp_input': disableKcpInput,
-        'enable_quic_proxy': enableQuicProxy,
-        'disable_quic_input': disableQuicInput,
-        'disable_ipv6': disableIpv6,
-        'disable_encryption': disableEncryption,
-        'encryption_algorithm': encryptionAlgorithm,
-        'secure_mode': secureMode,
-        'local_private_key': localPrivateKey,
-        'local_public_key': localPublicKey,
-        'credential': credential,
-        'credential_file': credentialFile,
-        'private_mode': privateMode,
-        'disable_p2p': disableP2p,
-        'disable_udp_hole_punching': disableUdpHolePunching,
-        'disable_tcp_hole_punching': disableTcpHolePunching,
-        'disable_sym_hole_punching': disableSymHolePunching,
-        'lazy_p2p': lazyP2p,
-        'need_p2p': needP2p,
-        'p2p_only': p2pOnly,
-        'relay_all_peer_rpc': relayAllPeerRpc,
-        'relay_network_whitelist': relayNetworkWhitelist,
-        'enable_relay_network_whitelist': enableRelayNetworkWhitelist,
-        'disable_relay_kcp': disableRelayKcp,
-        'disable_relay_quic': disableRelayQuic,
-        'enable_relay_foreign_network_kcp': enableRelayForeignNetworkKcp,
-        'enable_relay_foreign_network_quic': enableRelayForeignNetworkQuic,
-        'foreign_relay_bps_limit': foreignRelayBpsLimit,
-        'enable_magic_dns': enableMagicDns,
-        'accept_dns': acceptDns,
-        'tld_dns_zone': tldDnsZone,
-        'enable_socks5': enableSocks5,
-        'socks5_port': socks5Port,
-        'vpn_portal': vpnPortal,
-        'no_tun': noTun,
-        'use_smoltcp': useSmoltcp,
-        'latency_first': latencyFirst,
-        'multi_thread': multiThread,
-        'multi_thread_count': multiThreadCount,
-        'mtu': mtu,
-        'instance_recv_bps_limit': instanceRecvBpsLimit,
-        'compression': compression,
-        'dev_name': devName,
-        'bind_device': bindDevice,
-        'tcp_whitelist': tcpWhitelist,
-        'udp_whitelist': udpWhitelist,
-        'stun_servers': stunServers,
-        'stun_servers_v6': stunServersV6,
-        'rpc_port': rpcPort,
-        'rpc_portal_whitelist': rpcPortalWhitelist,
-        'console_log_level': consoleLogLevel,
-        'file_log_level': fileLogLevel,
-        'file_log_dir': fileLogDir,
-        'file_log_size_mb': fileLogSizeMb,
-        'file_log_count': fileLogCount,
-        'auto_start': autoStart,
-        'service_enabled': serviceEnabled,
-      };
-
-  factory NetworkConfig.fromJson(Map<String, dynamic> j) => NetworkConfig(
-        id: j['id'] as String?,
-        configName: j['config_name'] as String? ?? '',
-        networkName: j['network_name'] as String? ?? '',
-        networkSecret: j['network_secret'] as String? ?? '',
-        hostname: j['hostname'] as String? ?? '',
-        instanceName: j['instance_name'] as String? ?? '',
-        virtualIpv4: j['virtual_ipv4'] as String? ?? '',
-        virtualIpv6: j['virtual_ipv6'] as String? ?? '',
-        dhcp: j['dhcp'] as bool? ?? true,
-        peerUrls: _strList(j['peer_urls']),
-        listeners: _strList(j['listeners']),
-        mappedListeners: _strList(j['mapped_listeners']),
-        noListener: j['no_listener'] as bool? ?? false,
-        externalNode: j['external_node'] as String? ?? '',
-        defaultProtocol: j['default_protocol'] as String? ?? '',
-        proxyCidrs: _strList(j['proxy_cidrs']),
-        exitNodes: _strList(j['exit_nodes']),
-        enableExitNode: j['enable_exit_node'] as bool? ?? false,
-        proxyForwardBySystem: j['proxy_forward_by_system'] as bool? ?? false,
-        manualRoutes: _strList(j['manual_routes']),
-        portForwards: _pfList(j['port_forwards']),
-        enableKcpProxy: j['enable_kcp_proxy'] as bool? ?? false,
-        disableKcpInput: j['disable_kcp_input'] as bool? ?? false,
-        enableQuicProxy: j['enable_quic_proxy'] as bool? ?? false,
-        disableQuicInput: j['disable_quic_input'] as bool? ?? false,
-        disableIpv6: j['disable_ipv6'] as bool? ?? false,
-        disableEncryption: j['disable_encryption'] as bool? ?? false,
-        encryptionAlgorithm: j['encryption_algorithm'] as String? ?? '',
-        secureMode: j['secure_mode'] as bool? ?? false,
-        localPrivateKey: j['local_private_key'] as String? ?? '',
-        localPublicKey: j['local_public_key'] as String? ?? '',
-        credential: j['credential'] as String? ?? '',
-        credentialFile: j['credential_file'] as String? ?? '',
-        privateMode: j['private_mode'] as bool? ?? false,
-        disableP2p: j['disable_p2p'] as bool? ?? false,
-        disableUdpHolePunching:
-            j['disable_udp_hole_punching'] as bool? ?? false,
-        disableTcpHolePunching:
-            j['disable_tcp_hole_punching'] as bool? ?? false,
-        disableSymHolePunching:
-            j['disable_sym_hole_punching'] as bool? ?? false,
-        lazyP2p: j['lazy_p2p'] as bool? ?? false,
-        needP2p: j['need_p2p'] as bool? ?? false,
-        p2pOnly: j['p2p_only'] as bool? ?? false,
-        relayAllPeerRpc: j['relay_all_peer_rpc'] as bool? ?? false,
-        relayNetworkWhitelist: _strList(j['relay_network_whitelist']),
-        enableRelayNetworkWhitelist:
-            j['enable_relay_network_whitelist'] as bool? ?? false,
-        disableRelayKcp: j['disable_relay_kcp'] as bool? ?? false,
-        disableRelayQuic: j['disable_relay_quic'] as bool? ?? false,
-        enableRelayForeignNetworkKcp:
-            j['enable_relay_foreign_network_kcp'] as bool? ?? false,
-        enableRelayForeignNetworkQuic:
-            j['enable_relay_foreign_network_quic'] as bool? ?? false,
-        foreignRelayBpsLimit: j['foreign_relay_bps_limit'] as int? ?? 0,
-        enableMagicDns: j['enable_magic_dns'] as bool? ?? false,
-        acceptDns: j['accept_dns'] as bool? ?? false,
-        tldDnsZone: j['tld_dns_zone'] as String? ?? '',
-        enableSocks5: j['enable_socks5'] as bool? ?? false,
-        socks5Port: j['socks5_port'] as int? ?? 1080,
-        vpnPortal: j['vpn_portal'] as String? ?? '',
-        noTun: j['no_tun'] as bool? ?? false,
-        useSmoltcp: j['use_smoltcp'] as bool? ?? false,
-        latencyFirst: j['latency_first'] as bool? ?? false,
-        multiThread: j['multi_thread'] as bool? ?? true,
-        multiThreadCount: j['multi_thread_count'] as int? ?? 2,
-        mtu: j['mtu'] as int? ?? 1380,
-        instanceRecvBpsLimit: j['instance_recv_bps_limit'] as int? ?? 0,
-        compression: j['compression'] as String? ?? '',
-        devName: j['dev_name'] as String? ?? '',
-        bindDevice: j['bind_device'] as bool? ?? true,
-        tcpWhitelist: _strList(j['tcp_whitelist']),
-        udpWhitelist: _strList(j['udp_whitelist']),
-        stunServers: _strList(j['stun_servers']),
-        stunServersV6: _strList(j['stun_servers_v6']),
-        rpcPort: j['rpc_port'] as int? ?? 15888,
-        rpcPortalWhitelist: _strList(j['rpc_portal_whitelist']),
-        consoleLogLevel: j['console_log_level'] as String? ?? 'info',
-        fileLogLevel: j['file_log_level'] as String? ?? '',
-        fileLogDir: j['file_log_dir'] as String? ?? '',
-        fileLogSizeMb: j['file_log_size_mb'] as int? ?? 0,
-        fileLogCount: j['file_log_count'] as int? ?? 0,
-        autoStart: j['auto_start'] as bool? ?? false,
-        serviceEnabled: j['service_enabled'] as bool? ?? false,
-      );
-
-  static List<String> _strList(dynamic v) {
-    if (v is List) return v.cast<String>();
-    return [];
+    this.rpcPort = 15888,
+    List<String>? rpcPortalWhitelist,
+  })  : id = _normalizeId(id),
+        _tomlData = _deepCopyMap(tomlData ?? <String, dynamic>{}),
+        rpcPortalWhitelist = rpcPortalWhitelist ?? <String>[] {
+    _setTopLevel('instance_id', this.id, removeIfEmpty: false);
   }
 
-  static List<PortForwardConfig> _pfList(dynamic v) {
-    if (v is List) {
-      return v
-          .whereType<Map<String, dynamic>>()
-          .map(PortForwardConfig.fromJson)
-          .toList();
-    }
-    return [];
-  }
-
-  // ── CLI args generation ──
-
-  List<String> toCliArgs() {
-    final a = <String>[];
-
-    void flag(bool v, String name) {
-      if (v) a.add(name);
-    }
-
-    void opt(String v, String name) {
-      if (v.isNotEmpty) a.addAll([name, v]);
-    }
-
-    void optInt(int v, String name) {
-      if (v > 0) a.addAll([name, '$v']);
-    }
-
-    void list(List<String> v, String name) {
-      for (final item in v) {
-        if (item.isNotEmpty) a.addAll([name, item]);
-      }
-    }
-
-    // Identity
-    opt(networkName, '--network-name');
-    opt(networkSecret, '--network-secret');
-    opt(hostname, '--hostname');
-    opt(instanceName, '--instance-name');
-
-    // IP
-    opt(virtualIpv4, '--ipv4');
-    opt(virtualIpv6, '--ipv6');
-    if (dhcp) a.add('--dhcp');
-
-    // Connectivity
-    list(peerUrls, '--peers');
-    if (!noListener) {
-      list(listeners, '--listeners');
-    }
-    list(mappedListeners, '--mapped-listeners');
-    flag(noListener, '--no-listener');
-    opt(externalNode, '--external-node');
-    opt(defaultProtocol, '--default-protocol');
-
-    // Proxy & Routing
-    list(proxyCidrs, '--proxy-networks');
-    list(exitNodes, '--exit-nodes');
-    flag(enableExitNode, '--enable-exit-node');
-    flag(proxyForwardBySystem, '--proxy-forward-by-system');
-    list(manualRoutes, '--manual-routes');
-
-    // Port Forwarding
-    for (final pf in portForwards) {
-      a.addAll(['--port-forward', pf.toCliUrl()]);
-    }
-
-    // Tunnel Protocols
-    flag(enableKcpProxy, '--enable-kcp-proxy');
-    flag(disableKcpInput, '--disable-kcp-input');
-    flag(enableQuicProxy, '--enable-quic-proxy');
-    flag(disableQuicInput, '--disable-quic-input');
-    flag(disableIpv6, '--disable-ipv6');
-
-    // Security
-    flag(disableEncryption, '--disable-encryption');
-    opt(encryptionAlgorithm, '--encryption-algorithm');
-    flag(secureMode, '--secure-mode');
-    opt(localPrivateKey, '--local-private-key');
-    opt(localPublicKey, '--local-public-key');
-    opt(credential, '--credential');
-    opt(credentialFile, '--credential-file');
-    flag(privateMode, '--private-mode');
-
-    // P2P & NAT
-    flag(disableP2p, '--disable-p2p');
-    if (!disableP2p) {
-      flag(disableUdpHolePunching, '--disable-udp-hole-punching');
-      flag(disableTcpHolePunching, '--disable-tcp-hole-punching');
-      flag(disableSymHolePunching, '--disable-sym-hole-punching');
-      flag(lazyP2p, '--lazy-p2p');
-      flag(needP2p, '--need-p2p');
-      flag(p2pOnly, '--p2p-only');
-    }
-
-    // Relay
-    flag(relayAllPeerRpc, '--relay-all-peer-rpc');
-    if (enableRelayNetworkWhitelist) {
-      a.addAll([
-        '--relay-network-whitelist',
-        relayNetworkWhitelist.join(','),
-      ]);
-    }
-    flag(disableRelayKcp, '--disable-relay-kcp');
-    flag(disableRelayQuic, '--disable-relay-quic');
-    flag(enableRelayForeignNetworkKcp, '--enable-relay-foreign-network-kcp');
-    flag(
-        enableRelayForeignNetworkQuic, '--enable-relay-foreign-network-quic');
-    optInt(foreignRelayBpsLimit, '--foreign-relay-bps-limit');
-
-    // Features
-    if (acceptDns) a.add('--accept-dns');
-    opt(tldDnsZone, '--tld-dns-zone');
-    if (enableSocks5) {
-      a.addAll(['--socks5', '$socks5Port']);
-    }
-    opt(vpnPortal, '--vpn-portal');
-    flag(noTun, '--no-tun');
-    flag(useSmoltcp, '--use-smoltcp');
-
-    // Performance
-    flag(latencyFirst, '--latency-first');
-    flag(multiThread, '--multi-thread');
-    optInt(multiThreadCount, '--multi-thread-count');
-    if (mtu != 1380) a.addAll(['--mtu', '$mtu']);
-    optInt(instanceRecvBpsLimit, '--instance-recv-bps-limit');
-    opt(compression, '--compression');
-
-    // Device
-    opt(devName, '--dev-name');
-    flag(bindDevice, '--bind-device');
-
-    // Whitelists
-    if (tcpWhitelist.isNotEmpty) {
-      a.addAll(['--tcp-whitelist', tcpWhitelist.join(',')]);
-    }
-    if (udpWhitelist.isNotEmpty) {
-      a.addAll(['--udp-whitelist', udpWhitelist.join(',')]);
-    }
-
-    // STUN
-    if (stunServers.isNotEmpty) {
-      a.addAll(['--stun-servers', stunServers.join(',')]);
-    }
-    if (stunServersV6.isNotEmpty) {
-      a.addAll(['--stun-servers-v6', stunServersV6.join(',')]);
-    }
-
-    // RPC
-    a.addAll(['--rpc-portal', '127.0.0.1:$rpcPort']);
-    if (rpcPortalWhitelist.isNotEmpty) {
-      a.addAll(['--rpc-portal-whitelist', rpcPortalWhitelist.join(',')]);
-    }
-
-    // Logging
-    if (consoleLogLevel != 'info') {
-      a.addAll(['--console-log-level', consoleLogLevel]);
-    }
-    opt(fileLogLevel, '--file-log-level');
-    opt(fileLogDir, '--file-log-dir');
-    optInt(fileLogSizeMb, '--file-log-size');
-    optInt(fileLogCount, '--file-log-count');
-
-    return a;
+  factory NetworkConfig.fromJson(Map<String, dynamic> json) {
+    final rawToml = json['toml_data'];
+    return NetworkConfig(
+      id: json['id'] as String?,
+      tomlData: rawToml is Map ? rawToml.cast<String, dynamic>() : null,
+      autoStart: json['auto_start'] as bool? ?? false,
+      serviceEnabled: json['service_enabled'] as bool? ?? false,
+      rpcPort: json['rpc_port'] as int? ?? 15888,
+      rpcPortalWhitelist: _asStringList(json['rpc_portal_whitelist']),
+    );
   }
 
   factory NetworkConfig.fromToml(
     String toml, {
     String? id,
-    String configName = '',
     bool autoStart = false,
     bool serviceEnabled = false,
+    int rpcPort = 15888,
+    List<String>? rpcPortalWhitelist,
   }) {
-    final values = TomlDocument.parse(toml).toMap();
+    final parsed = TomlDocument.parse(toml).toMap();
+    final rawId = _asString(parsed['instance_id']);
+    final effectiveId = id ?? _normalizeId(rawId.isEmpty ? null : rawId);
     return NetworkConfig(
-      id: id,
-      configName: configName,
+      id: effectiveId,
+      tomlData: parsed,
       autoStart: autoStart,
       serviceEnabled: serviceEnabled,
-      networkName: _stringValue(values['network_name']),
-      networkSecret: _stringValue(values['network_secret']),
-      hostname: _stringValue(values['hostname']),
-      instanceName: _stringValue(values['instance_name']),
-      virtualIpv4: _stringValue(values['virtual_ipv4']),
-      virtualIpv6: _stringValue(values['virtual_ipv6']),
-      dhcp: _boolValue(values['dhcp'], true),
-      peerUrls: _stringListValue(values['peer_urls']),
-      listeners: _stringListValue(values['listeners']),
-      mappedListeners: _stringListValue(values['mapped_listeners']),
-      noListener: _boolValue(values['no_listener'], false),
-      externalNode: _stringValue(values['external_node']),
-      defaultProtocol: _stringValue(values['default_protocol']),
-      proxyCidrs: _stringListValue(values['proxy_cidrs']),
-      exitNodes: _stringListValue(values['exit_nodes']),
-      enableExitNode: _boolValue(values['enable_exit_node'], false),
-      proxyForwardBySystem:
-          _boolValue(values['proxy_forward_by_system'], false),
-      manualRoutes: _stringListValue(values['manual_routes']),
-      portForwards: _portForwardListValue(values['port_forward']),
-      enableKcpProxy: _boolValue(values['enable_kcp_proxy'], false),
-      disableKcpInput: _boolValue(values['disable_kcp_input'], false),
-      enableQuicProxy: _boolValue(values['enable_quic_proxy'], false),
-      disableQuicInput: _boolValue(values['disable_quic_input'], false),
-      disableIpv6: _boolValue(values['disable_ipv6'], false),
-      disableEncryption: _boolValue(values['disable_encryption'], false),
-      encryptionAlgorithm: _stringValue(values['encryption_algorithm']),
-      secureMode: _boolValue(values['secure_mode'], false),
-      localPrivateKey: _stringValue(values['local_private_key']),
-      localPublicKey: _stringValue(values['local_public_key']),
-      credential: _stringValue(values['credential']),
-      credentialFile: _stringValue(values['credential_file']),
-      privateMode: _boolValue(values['private_mode'], false),
-      disableP2p: _boolValue(values['disable_p2p'], false),
-      disableUdpHolePunching:
-          _boolValue(values['disable_udp_hole_punching'], false),
-      disableTcpHolePunching:
-          _boolValue(values['disable_tcp_hole_punching'], false),
-      disableSymHolePunching:
-          _boolValue(values['disable_sym_hole_punching'], false),
-      lazyP2p: _boolValue(values['lazy_p2p'], false),
-      needP2p: _boolValue(values['need_p2p'], false),
-      p2pOnly: _boolValue(values['p2p_only'], false),
-      relayAllPeerRpc: _boolValue(values['relay_all_peer_rpc'], false),
-      relayNetworkWhitelist:
-          _stringListValue(values['relay_network_whitelist']),
-      enableRelayNetworkWhitelist:
-          _boolValue(values['enable_relay_network_whitelist'], false),
-      disableRelayKcp: _boolValue(values['disable_relay_kcp'], false),
-      disableRelayQuic: _boolValue(values['disable_relay_quic'], false),
-      enableRelayForeignNetworkKcp:
-          _boolValue(values['enable_relay_foreign_network_kcp'], false),
-      enableRelayForeignNetworkQuic:
-          _boolValue(values['enable_relay_foreign_network_quic'], false),
-      foreignRelayBpsLimit: _intValue(values['foreign_relay_bps_limit']),
-      enableMagicDns: _boolValue(values['enable_magic_dns'], false),
-      acceptDns: _boolValue(values['accept_dns'], false),
-      tldDnsZone: _stringValue(values['tld_dns_zone']),
-      enableSocks5: _boolValue(values['enable_socks5'], false),
-      socks5Port: _intValue(values['socks5_port'], 1080),
-      vpnPortal: _stringValue(values['vpn_portal']),
-      noTun: _boolValue(values['no_tun'], false),
-      useSmoltcp: _boolValue(values['use_smoltcp'], false),
-      latencyFirst: _boolValue(values['latency_first'], false),
-      multiThread: _boolValue(values['multi_thread'], true),
-      multiThreadCount: _intValue(values['multi_thread_count'], 2),
-      mtu: _intValue(values['mtu'], 1380),
-      instanceRecvBpsLimit:
-          _intValue(values['instance_recv_bps_limit']),
-      compression: _stringValue(values['compression']),
-      devName: _stringValue(values['dev_name']),
-      bindDevice: _boolValue(values['bind_device'], true),
-      tcpWhitelist: _stringListValue(values['tcp_whitelist']),
-      udpWhitelist: _stringListValue(values['udp_whitelist']),
-      stunServers: _stringListValue(values['stun_servers']),
-      stunServersV6: _stringListValue(values['stun_servers_v6']),
-      rpcPort: _intValue(values['rpc_port'], 15888),
-      rpcPortalWhitelist:
-          _stringListValue(values['rpc_portal_whitelist']),
-      consoleLogLevel:
-          _stringValue(values['console_log_level'], 'info'),
-      fileLogLevel: _stringValue(values['file_log_level']),
-      fileLogDir: _stringValue(values['file_log_dir']),
-      fileLogSizeMb: _intValue(values['file_log_size_mb']),
-      fileLogCount: _intValue(values['file_log_count']),
+      rpcPort: rpcPort,
+      rpcPortalWhitelist: rpcPortalWhitelist,
     );
   }
 
-  // ── TOML generation (FlEasyTier storage format) ──
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'auto_start': autoStart,
+        'service_enabled': serviceEnabled,
+        'rpc_port': rpcPort,
+        'rpc_portal_whitelist': List<String>.from(rpcPortalWhitelist),
+        'toml_data': tomlData,
+      };
+
+  Map<String, dynamic> get tomlData => _deepCopyMap(_tomlData);
 
   String toToml() {
-    return TomlDocument.fromMap({
-      'format_version': 1,
-      'network_name': networkName,
-      'network_secret': networkSecret,
-      'hostname': hostname,
-      'instance_name': instanceName,
-      'virtual_ipv4': virtualIpv4,
-      'virtual_ipv6': virtualIpv6,
-      'dhcp': dhcp,
-      'peer_urls': peerUrls,
-      'listeners': listeners,
-      'mapped_listeners': mappedListeners,
-      'no_listener': noListener,
-      'external_node': externalNode,
-      'default_protocol': defaultProtocol,
-      'proxy_cidrs': proxyCidrs,
-      'exit_nodes': exitNodes,
-      'enable_exit_node': enableExitNode,
-      'proxy_forward_by_system': proxyForwardBySystem,
-      'manual_routes': manualRoutes,
-      'enable_kcp_proxy': enableKcpProxy,
-      'disable_kcp_input': disableKcpInput,
-      'enable_quic_proxy': enableQuicProxy,
-      'disable_quic_input': disableQuicInput,
-      'disable_ipv6': disableIpv6,
-      'disable_encryption': disableEncryption,
-      'encryption_algorithm': encryptionAlgorithm,
-      'secure_mode': secureMode,
-      'local_private_key': localPrivateKey,
-      'local_public_key': localPublicKey,
-      'credential': credential,
-      'credential_file': credentialFile,
-      'private_mode': privateMode,
-      'disable_p2p': disableP2p,
-      'disable_udp_hole_punching': disableUdpHolePunching,
-      'disable_tcp_hole_punching': disableTcpHolePunching,
-      'disable_sym_hole_punching': disableSymHolePunching,
-      'lazy_p2p': lazyP2p,
-      'need_p2p': needP2p,
-      'p2p_only': p2pOnly,
-      'relay_all_peer_rpc': relayAllPeerRpc,
-      'relay_network_whitelist': relayNetworkWhitelist,
-      'enable_relay_network_whitelist': enableRelayNetworkWhitelist,
-      'disable_relay_kcp': disableRelayKcp,
-      'disable_relay_quic': disableRelayQuic,
-      'enable_relay_foreign_network_kcp': enableRelayForeignNetworkKcp,
-      'enable_relay_foreign_network_quic': enableRelayForeignNetworkQuic,
-      'foreign_relay_bps_limit': foreignRelayBpsLimit,
-      'enable_magic_dns': enableMagicDns,
-      'accept_dns': acceptDns,
-      'tld_dns_zone': tldDnsZone,
-      'enable_socks5': enableSocks5,
-      'socks5_port': socks5Port,
-      'vpn_portal': vpnPortal,
-      'no_tun': noTun,
-      'use_smoltcp': useSmoltcp,
-      'latency_first': latencyFirst,
-      'multi_thread': multiThread,
-      'multi_thread_count': multiThreadCount,
-      'mtu': mtu,
-      'instance_recv_bps_limit': instanceRecvBpsLimit,
-      'compression': compression,
-      'dev_name': devName,
-      'bind_device': bindDevice,
-      'tcp_whitelist': tcpWhitelist,
-      'udp_whitelist': udpWhitelist,
-      'stun_servers': stunServers,
-      'stun_servers_v6': stunServersV6,
-      'rpc_port': rpcPort,
-      'rpc_portal_whitelist': rpcPortalWhitelist,
-      'console_log_level': consoleLogLevel,
-      'file_log_level': fileLogLevel,
-      'file_log_dir': fileLogDir,
-      'file_log_size_mb': fileLogSizeMb,
-      'file_log_count': fileLogCount,
-      'port_forward': portForwards
-          .map((pf) => {
-                'bind_ip': pf.bindIp,
-                'bind_port': pf.bindPort,
-                'dst_ip': pf.dstIp,
-                'dst_port': pf.dstPort,
-                'proto': pf.proto,
-              })
-          .toList(),
-    }).toString();
+    final data = _deepCopyMap(_tomlData);
+    data['instance_id'] = id;
+    _removeDefaultFlags(data);
+    _pruneEmptyValues(data);
+    return TomlDocument.fromMap(data).toString();
   }
 
-  // ── copyWith ──
-
   NetworkConfig copyWith({
-    String? configName,
-    String? networkName,
-    String? networkSecret,
-    String? hostname,
-    String? instanceName,
-    String? virtualIpv4,
-    String? virtualIpv6,
-    bool? dhcp,
-    List<String>? peerUrls,
-    List<String>? listeners,
-    List<String>? mappedListeners,
-    bool? noListener,
-    String? externalNode,
-    String? defaultProtocol,
-    List<String>? proxyCidrs,
-    List<String>? exitNodes,
-    bool? enableExitNode,
-    bool? proxyForwardBySystem,
-    List<String>? manualRoutes,
-    List<PortForwardConfig>? portForwards,
-    bool? enableKcpProxy,
-    bool? disableKcpInput,
-    bool? enableQuicProxy,
-    bool? disableQuicInput,
-    bool? disableIpv6,
-    bool? disableEncryption,
-    String? encryptionAlgorithm,
-    bool? secureMode,
-    String? localPrivateKey,
-    String? localPublicKey,
-    String? credential,
-    String? credentialFile,
-    bool? privateMode,
-    bool? disableP2p,
-    bool? disableUdpHolePunching,
-    bool? disableTcpHolePunching,
-    bool? disableSymHolePunching,
-    bool? lazyP2p,
-    bool? needP2p,
-    bool? p2pOnly,
-    bool? relayAllPeerRpc,
-    List<String>? relayNetworkWhitelist,
-    bool? enableRelayNetworkWhitelist,
-    bool? disableRelayKcp,
-    bool? disableRelayQuic,
-    bool? enableRelayForeignNetworkKcp,
-    bool? enableRelayForeignNetworkQuic,
-    int? foreignRelayBpsLimit,
-    bool? enableMagicDns,
-    bool? acceptDns,
-    String? tldDnsZone,
-    bool? enableSocks5,
-    int? socks5Port,
-    String? vpnPortal,
-    bool? noTun,
-    bool? useSmoltcp,
-    bool? latencyFirst,
-    bool? multiThread,
-    int? multiThreadCount,
-    int? mtu,
-    int? instanceRecvBpsLimit,
-    String? compression,
-    String? devName,
-    bool? bindDevice,
-    List<String>? tcpWhitelist,
-    List<String>? udpWhitelist,
-    List<String>? stunServers,
-    List<String>? stunServersV6,
-    int? rpcPort,
-    List<String>? rpcPortalWhitelist,
-    String? consoleLogLevel,
-    String? fileLogLevel,
-    String? fileLogDir,
-    int? fileLogSizeMb,
-    int? fileLogCount,
     bool? autoStart,
     bool? serviceEnabled,
+    int? rpcPort,
+    List<String>? rpcPortalWhitelist,
+    Map<String, dynamic>? tomlData,
   }) {
     return NetworkConfig(
       id: id,
-      configName: configName ?? this.configName,
-      networkName: networkName ?? this.networkName,
-      networkSecret: networkSecret ?? this.networkSecret,
-      hostname: hostname ?? this.hostname,
-      instanceName: instanceName ?? this.instanceName,
-      virtualIpv4: virtualIpv4 ?? this.virtualIpv4,
-      virtualIpv6: virtualIpv6 ?? this.virtualIpv6,
-      dhcp: dhcp ?? this.dhcp,
-      peerUrls: peerUrls ?? List.of(this.peerUrls),
-      listeners: listeners ?? List.of(this.listeners),
-      mappedListeners: mappedListeners ?? List.of(this.mappedListeners),
-      noListener: noListener ?? this.noListener,
-      externalNode: externalNode ?? this.externalNode,
-      defaultProtocol: defaultProtocol ?? this.defaultProtocol,
-      proxyCidrs: proxyCidrs ?? List.of(this.proxyCidrs),
-      exitNodes: exitNodes ?? List.of(this.exitNodes),
-      enableExitNode: enableExitNode ?? this.enableExitNode,
-      proxyForwardBySystem:
-          proxyForwardBySystem ?? this.proxyForwardBySystem,
-      manualRoutes: manualRoutes ?? List.of(this.manualRoutes),
-      portForwards:
-          portForwards ?? this.portForwards.map((e) => e.copy()).toList(),
-      enableKcpProxy: enableKcpProxy ?? this.enableKcpProxy,
-      disableKcpInput: disableKcpInput ?? this.disableKcpInput,
-      enableQuicProxy: enableQuicProxy ?? this.enableQuicProxy,
-      disableQuicInput: disableQuicInput ?? this.disableQuicInput,
-      disableIpv6: disableIpv6 ?? this.disableIpv6,
-      disableEncryption: disableEncryption ?? this.disableEncryption,
-      encryptionAlgorithm:
-          encryptionAlgorithm ?? this.encryptionAlgorithm,
-      secureMode: secureMode ?? this.secureMode,
-      localPrivateKey: localPrivateKey ?? this.localPrivateKey,
-      localPublicKey: localPublicKey ?? this.localPublicKey,
-      credential: credential ?? this.credential,
-      credentialFile: credentialFile ?? this.credentialFile,
-      privateMode: privateMode ?? this.privateMode,
-      disableP2p: disableP2p ?? this.disableP2p,
-      disableUdpHolePunching:
-          disableUdpHolePunching ?? this.disableUdpHolePunching,
-      disableTcpHolePunching:
-          disableTcpHolePunching ?? this.disableTcpHolePunching,
-      disableSymHolePunching:
-          disableSymHolePunching ?? this.disableSymHolePunching,
-      lazyP2p: lazyP2p ?? this.lazyP2p,
-      needP2p: needP2p ?? this.needP2p,
-      p2pOnly: p2pOnly ?? this.p2pOnly,
-      relayAllPeerRpc: relayAllPeerRpc ?? this.relayAllPeerRpc,
-      relayNetworkWhitelist:
-          relayNetworkWhitelist ?? List.of(this.relayNetworkWhitelist),
-      enableRelayNetworkWhitelist:
-          enableRelayNetworkWhitelist ?? this.enableRelayNetworkWhitelist,
-      disableRelayKcp: disableRelayKcp ?? this.disableRelayKcp,
-      disableRelayQuic: disableRelayQuic ?? this.disableRelayQuic,
-      enableRelayForeignNetworkKcp:
-          enableRelayForeignNetworkKcp ?? this.enableRelayForeignNetworkKcp,
-      enableRelayForeignNetworkQuic: enableRelayForeignNetworkQuic ??
-          this.enableRelayForeignNetworkQuic,
-      foreignRelayBpsLimit:
-          foreignRelayBpsLimit ?? this.foreignRelayBpsLimit,
-      enableMagicDns: enableMagicDns ?? this.enableMagicDns,
-      acceptDns: acceptDns ?? this.acceptDns,
-      tldDnsZone: tldDnsZone ?? this.tldDnsZone,
-      enableSocks5: enableSocks5 ?? this.enableSocks5,
-      socks5Port: socks5Port ?? this.socks5Port,
-      vpnPortal: vpnPortal ?? this.vpnPortal,
-      noTun: noTun ?? this.noTun,
-      useSmoltcp: useSmoltcp ?? this.useSmoltcp,
-      latencyFirst: latencyFirst ?? this.latencyFirst,
-      multiThread: multiThread ?? this.multiThread,
-      multiThreadCount: multiThreadCount ?? this.multiThreadCount,
-      mtu: mtu ?? this.mtu,
-      instanceRecvBpsLimit:
-          instanceRecvBpsLimit ?? this.instanceRecvBpsLimit,
-      compression: compression ?? this.compression,
-      devName: devName ?? this.devName,
-      bindDevice: bindDevice ?? this.bindDevice,
-      tcpWhitelist: tcpWhitelist ?? List.of(this.tcpWhitelist),
-      udpWhitelist: udpWhitelist ?? List.of(this.udpWhitelist),
-      stunServers: stunServers ?? List.of(this.stunServers),
-      stunServersV6: stunServersV6 ?? List.of(this.stunServersV6),
-      rpcPort: rpcPort ?? this.rpcPort,
-      rpcPortalWhitelist:
-          rpcPortalWhitelist ?? List.of(this.rpcPortalWhitelist),
-      consoleLogLevel: consoleLogLevel ?? this.consoleLogLevel,
-      fileLogLevel: fileLogLevel ?? this.fileLogLevel,
-      fileLogDir: fileLogDir ?? this.fileLogDir,
-      fileLogSizeMb: fileLogSizeMb ?? this.fileLogSizeMb,
-      fileLogCount: fileLogCount ?? this.fileLogCount,
+      tomlData: tomlData ?? _tomlData,
       autoStart: autoStart ?? this.autoStart,
       serviceEnabled: serviceEnabled ?? this.serviceEnabled,
+      rpcPort: rpcPort ?? this.rpcPort,
+      rpcPortalWhitelist: rpcPortalWhitelist ?? this.rpcPortalWhitelist,
     );
   }
 
-String get displayName => configName.isNotEmpty
-      ? configName
-      : (networkName.isNotEmpty ? networkName : 'Unnamed');
-}
-
-String _stringValue(dynamic value, [String fallback = '']) {
-  if (value is String) return value;
-  return fallback;
-}
-
-bool _boolValue(dynamic value, [bool fallback = false]) {
-  if (value is bool) return value;
-  if (value is String) {
-    if (value == 'true') return true;
-    if (value == 'false') return false;
+  String get displayName {
+    if (configName.trim().isNotEmpty) return configName.trim();
+    if (instanceName.isNotEmpty) return instanceName;
+    if (networkName.isNotEmpty) return networkName;
+    if (hostname.isNotEmpty) return hostname;
+    return id;
   }
-  return fallback;
-}
 
-int _intValue(dynamic value, [int fallback = 0]) {
-  if (value is int) return value;
-  if (value is String) return int.tryParse(value) ?? fallback;
-  return fallback;
-}
-
-List<String> _stringListValue(dynamic value) {
-  if (value is List) {
-    return value.map((item) => item.toString()).toList();
+  String get networkName => _getStringPath(const ['network_identity', 'network_name']);
+  set networkName(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      _removePath(const ['network_identity', 'network_name']);
+      return;
+    }
+    _setStringPath(const ['network_identity', 'network_name'], trimmed);
   }
-  return const [];
-}
 
-List<PortForwardConfig> _portForwardListValue(dynamic value) {
-  if (value is List) {
-    return value
-        .whereType<Map>()
-        .map((item) => PortForwardConfig(
-              bindIp: _stringValue(item['bind_ip'], '0.0.0.0'),
-              bindPort: _intValue(item['bind_port']),
-              dstIp: _stringValue(item['dst_ip']),
-              dstPort: _intValue(item['dst_port']),
-              proto: _stringValue(item['proto'], 'tcp'),
-            ))
+  String get networkSecret =>
+      _getStringPath(const ['network_identity', 'network_secret']);
+  set networkSecret(String value) {
+    final identity = _ensureMapPath(const ['network_identity']);
+    identity['network_secret'] = value;
+  }
+
+  String get hostname => _getStringPath(const ['hostname']);
+  set hostname(String value) => _setTopLevel('hostname', value.trim());
+
+  String get instanceName => _getStringPath(const ['instance_name']);
+  set instanceName(String value) => _setTopLevel('instance_name', value.trim());
+
+  String get netns => _getStringPath(const ['netns']);
+  set netns(String value) => _setTopLevel('netns', value.trim());
+
+  String get virtualIpv4 => _getStringPath(const ['ipv4']);
+  set virtualIpv4(String value) => _setTopLevel('ipv4', value.trim());
+
+  String get virtualIpv6 => _getStringPath(const ['ipv6']);
+  set virtualIpv6(String value) => _setTopLevel('ipv6', value.trim());
+
+  bool get dhcp => _getBoolPath(const ['dhcp']);
+  set dhcp(bool value) => _setTopLevel('dhcp', value, removeIfFalse: true);
+
+  List<String> get listeners => _getStringListPath(const ['listeners']);
+  set listeners(List<String> value) => _setTopLevel('listeners', _cleanList(value));
+
+  List<String> get mappedListeners =>
+      _getStringListPath(const ['mapped_listeners']);
+  set mappedListeners(List<String> value) =>
+      _setTopLevel('mapped_listeners', _cleanList(value));
+
+  bool get noListener => listeners.isEmpty;
+  set noListener(bool value) {
+    if (value) {
+      listeners = const <String>[];
+    }
+  }
+
+  List<String> get exitNodes => _getStringListPath(const ['exit_nodes']);
+  set exitNodes(List<String> value) => _setTopLevel('exit_nodes', _cleanList(value));
+
+  List<String> get manualRoutes => _getStringListPath(const ['routes']);
+  set manualRoutes(List<String> value) => _setTopLevel('routes', _cleanList(value));
+
+  List<String> get tcpWhitelist => _getStringListPath(const ['tcp_whitelist']);
+  set tcpWhitelist(List<String> value) =>
+      _setTopLevel('tcp_whitelist', _cleanList(value));
+
+  List<String> get udpWhitelist => _getStringListPath(const ['udp_whitelist']);
+  set udpWhitelist(List<String> value) =>
+      _setTopLevel('udp_whitelist', _cleanList(value));
+
+  List<String> get stunServers => _getStringListPath(const ['stun_servers']);
+  set stunServers(List<String> value) =>
+      _setTopLevel('stun_servers', _cleanList(value));
+
+  List<String> get stunServersV6 => _getStringListPath(const ['stun_servers_v6']);
+  set stunServersV6(List<String> value) =>
+      _setTopLevel('stun_servers_v6', _cleanList(value));
+
+  List<OfficialPeerConfig> get peers => _getMapListPath(
+        const ['peer'],
+      ).map(OfficialPeerConfig.fromTomlMap).toList();
+  set peers(List<OfficialPeerConfig> value) => _setTopLevel(
+        'peer',
+        value.map((entry) => entry.toTomlMap()).where((entry) => entry.isNotEmpty).toList(),
+      );
+
+  List<String> get peerUrls => peers.map((entry) => entry.uri).where((entry) => entry.isNotEmpty).toList();
+  set peerUrls(List<String> value) {
+    peers = value
+        .map((uri) => OfficialPeerConfig(uri: uri.trim()))
+        .where((entry) => entry.uri.isNotEmpty)
         .toList();
   }
-  return const [];
+
+  List<OfficialProxyNetworkConfig> get proxyNetworks => _getMapListPath(
+        const ['proxy_network'],
+      ).map(OfficialProxyNetworkConfig.fromTomlMap).toList();
+  set proxyNetworks(List<OfficialProxyNetworkConfig> value) => _setTopLevel(
+        'proxy_network',
+        value.map((entry) => entry.toTomlMap()).where((entry) => entry.isNotEmpty).toList(),
+      );
+
+  List<String> get proxyCidrs =>
+      proxyNetworks.map((entry) => entry.cidr).where((entry) => entry.isNotEmpty).toList();
+  set proxyCidrs(List<String> value) {
+    proxyNetworks = value
+        .map((cidr) => OfficialProxyNetworkConfig(cidr: cidr.trim()))
+        .where((entry) => entry.cidr.isNotEmpty)
+        .toList();
+  }
+
+  String get socks5Proxy => _getStringPath(const ['socks5_proxy']);
+  set socks5Proxy(String value) => _setTopLevel('socks5_proxy', value.trim());
+
+  bool get enableSocks5 => socks5Proxy.isNotEmpty;
+  set enableSocks5(bool value) {
+    if (!value) {
+      socks5Proxy = '';
+      return;
+    }
+    if (socks5Proxy.isEmpty) {
+      socks5Proxy = 'socks5://0.0.0.0:1080';
+    }
+  }
+
+  int get socks5Port => _splitHostPort(_uriHostPort(socks5Proxy)).$2;
+  set socks5Port(int value) {
+    final host = _splitHostPort(_uriHostPort(socks5Proxy.isNotEmpty ? socks5Proxy : 'socks5://0.0.0.0:1080')).$1;
+    socks5Proxy = 'socks5://${_joinHostPort(host.isEmpty ? '0.0.0.0' : host, value)}';
+  }
+
+  String get vpnPortalClientCidr =>
+      _getStringPath(const ['vpn_portal_config', 'client_cidr']);
+  set vpnPortalClientCidr(String value) =>
+      _setStringPath(const ['vpn_portal_config', 'client_cidr'], value.trim());
+
+  String get vpnPortalWireguardListen =>
+      _getStringPath(const ['vpn_portal_config', 'wireguard_listen']);
+  set vpnPortalWireguardListen(String value) => _setStringPath(
+        const ['vpn_portal_config', 'wireguard_listen'],
+        value.trim(),
+      );
+
+  String get vpnPortal {
+    if (vpnPortalClientCidr.isEmpty && vpnPortalWireguardListen.isEmpty) return '';
+    return '$vpnPortalClientCidr @ $vpnPortalWireguardListen'.trim();
+  }
+
+  set vpnPortal(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      vpnPortalClientCidr = '';
+      vpnPortalWireguardListen = '';
+      return;
+    }
+    final parts = trimmed.split('@');
+    if (parts.length == 2) {
+      vpnPortalClientCidr = parts.first.trim();
+      vpnPortalWireguardListen = parts.last.trim();
+    } else {
+      vpnPortalWireguardListen = trimmed;
+    }
+  }
+
+  List<PortForwardConfig> get portForwards => _getMapListPath(
+        const ['port_forward'],
+      ).map(PortForwardConfig.fromTomlMap).toList();
+  set portForwards(List<PortForwardConfig> value) => _setTopLevel(
+        'port_forward',
+        value.map((entry) => entry.toTomlMap()).where((entry) => entry.isNotEmpty).toList(),
+      );
+
+  String get credentialFile => _getStringPath(const ['credential_file']);
+  set credentialFile(String value) => _setTopLevel('credential_file', value.trim());
+
+  bool get secureModeEnabled => _getBoolPath(const ['secure_mode', 'enabled']);
+  set secureModeEnabled(bool value) =>
+      _setBoolPath(const ['secure_mode', 'enabled'], value);
+
+  bool get secureMode => secureModeEnabled;
+  set secureMode(bool value) => secureModeEnabled = value;
+
+  String get localPrivateKey =>
+      _getStringPath(const ['secure_mode', 'local_private_key']);
+  set localPrivateKey(String value) => _setStringPath(
+        const ['secure_mode', 'local_private_key'],
+        value.trim(),
+      );
+
+  String get localPublicKey =>
+      _getStringPath(const ['secure_mode', 'local_public_key']);
+  set localPublicKey(String value) =>
+      _setStringPath(const ['secure_mode', 'local_public_key'], value.trim());
+
+  String get consoleLogLevel =>
+      _getStringPath(const ['console_logger', 'level'], fallback: 'info');
+  set consoleLogLevel(String value) =>
+      _setStringPath(const ['console_logger', 'level'], value.trim());
+
+  String get fileLogLevel => _getStringPath(const ['file_logger', 'level']);
+  set fileLogLevel(String value) =>
+      _setStringPath(const ['file_logger', 'level'], value.trim());
+
+  String get fileLogFile => _getStringPath(const ['file_logger', 'file']);
+  set fileLogFile(String value) =>
+      _setStringPath(const ['file_logger', 'file'], value.trim());
+
+  String get fileLogDir => _getStringPath(const ['file_logger', 'dir']);
+  set fileLogDir(String value) =>
+      _setStringPath(const ['file_logger', 'dir'], value.trim());
+
+  int get fileLogSizeMb => _getIntPath(const ['file_logger', 'size_mb']);
+  set fileLogSizeMb(int value) =>
+      _setIntPath(const ['file_logger', 'size_mb'], value);
+
+  int get fileLogCount => _getIntPath(const ['file_logger', 'count']);
+  set fileLogCount(int value) => _setIntPath(const ['file_logger', 'count'], value);
+
+  String get defaultProtocol =>
+      _getFlagString('default_protocol', fallback: 'tcp');
+  set defaultProtocol(String value) => _setFlagValue('default_protocol', value.trim());
+
+  bool get enableExitNode => _getFlagBool('enable_exit_node');
+  set enableExitNode(bool value) => _setFlagValue('enable_exit_node', value);
+
+  bool get proxyForwardBySystem => _getFlagBool('proxy_forward_by_system');
+  set proxyForwardBySystem(bool value) =>
+      _setFlagValue('proxy_forward_by_system', value);
+
+  bool get noTun => _getFlagBool('no_tun');
+  set noTun(bool value) => _setFlagValue('no_tun', value);
+
+  bool get useSmoltcp => _getFlagBool('use_smoltcp');
+  set useSmoltcp(bool value) => _setFlagValue('use_smoltcp', value);
+
+  bool get latencyFirst => _getFlagBool('latency_first');
+  set latencyFirst(bool value) => _setFlagValue('latency_first', value);
+
+  bool get multiThread => _getFlagBool('multi_thread', fallback: true);
+  set multiThread(bool value) => _setFlagValue('multi_thread', value);
+
+  int get multiThreadCount => _getFlagInt('multi_thread_count', fallback: 2);
+  set multiThreadCount(int value) => _setFlagValue('multi_thread_count', value);
+
+  int get mtu => _getFlagInt('mtu', fallback: 1380);
+  set mtu(int value) => _setFlagValue('mtu', value);
+
+  int get instanceRecvBpsLimit {
+    final raw = _getFlagInt('instance_recv_bps_limit', fallback: 0);
+    return raw <= 0 ? 0 : raw;
+  }
+
+  set instanceRecvBpsLimit(int value) {
+    if (value <= 0) {
+      _removeFlagValue('instance_recv_bps_limit');
+      return;
+    }
+    _setFlagValue('instance_recv_bps_limit', value);
+  }
+
+  String get devName => _getFlagString('dev_name');
+  set devName(String value) => _setFlagValue('dev_name', value.trim());
+
+  bool get bindDevice => _getFlagBool('bind_device', fallback: true);
+  set bindDevice(bool value) => _setFlagValue('bind_device', value);
+
+  bool get enableKcpProxy => _getFlagBool('enable_kcp_proxy');
+  set enableKcpProxy(bool value) => _setFlagValue('enable_kcp_proxy', value);
+
+  bool get disableKcpInput => _getFlagBool('disable_kcp_input');
+  set disableKcpInput(bool value) => _setFlagValue('disable_kcp_input', value);
+
+  bool get enableQuicProxy => _getFlagBool('enable_quic_proxy');
+  set enableQuicProxy(bool value) => _setFlagValue('enable_quic_proxy', value);
+
+  bool get disableQuicInput => _getFlagBool('disable_quic_input');
+  set disableQuicInput(bool value) =>
+      _setFlagValue('disable_quic_input', value);
+
+  bool get disableRelayKcp => _getFlagBool('disable_relay_kcp');
+  set disableRelayKcp(bool value) => _setFlagValue('disable_relay_kcp', value);
+
+  bool get disableRelayQuic => _getFlagBool('disable_relay_quic');
+  set disableRelayQuic(bool value) => _setFlagValue('disable_relay_quic', value);
+
+  bool get enableRelayForeignNetworkKcp =>
+      _getFlagBool('enable_relay_foreign_network_kcp');
+  set enableRelayForeignNetworkKcp(bool value) =>
+      _setFlagValue('enable_relay_foreign_network_kcp', value);
+
+  bool get enableRelayForeignNetworkQuic =>
+      _getFlagBool('enable_relay_foreign_network_quic');
+  set enableRelayForeignNetworkQuic(bool value) =>
+      _setFlagValue('enable_relay_foreign_network_quic', value);
+
+  int get foreignRelayBpsLimit {
+    final raw = _getFlagInt('foreign_relay_bps_limit', fallback: 0);
+    return raw <= 0 ? 0 : raw;
+  }
+
+  set foreignRelayBpsLimit(int value) {
+    if (value <= 0) {
+      _removeFlagValue('foreign_relay_bps_limit');
+      return;
+    }
+    _setFlagValue('foreign_relay_bps_limit', value);
+  }
+
+  bool get acceptDns => _getFlagBool('accept_dns');
+  set acceptDns(bool value) => _setFlagValue('accept_dns', value);
+
+  bool get enableMagicDns => acceptDns;
+  set enableMagicDns(bool value) => acceptDns = value;
+
+  bool get privateMode => _getFlagBool('private_mode');
+  set privateMode(bool value) => _setFlagValue('private_mode', value);
+
+  bool get disableP2p => _getFlagBool('disable_p2p');
+  set disableP2p(bool value) => _setFlagValue('disable_p2p', value);
+
+  bool get p2pOnly => _getFlagBool('p2p_only');
+  set p2pOnly(bool value) => _setFlagValue('p2p_only', value);
+
+  bool get lazyP2p => _getFlagBool('lazy_p2p');
+  set lazyP2p(bool value) => _setFlagValue('lazy_p2p', value);
+
+  bool get needP2p => _getFlagBool('need_p2p');
+  set needP2p(bool value) => _setFlagValue('need_p2p', value);
+
+  bool get relayAllPeerRpc => _getFlagBool('relay_all_peer_rpc');
+  set relayAllPeerRpc(bool value) => _setFlagValue('relay_all_peer_rpc', value);
+
+  bool get disableTcpHolePunching =>
+      _getFlagBool('disable_tcp_hole_punching');
+  set disableTcpHolePunching(bool value) =>
+      _setFlagValue('disable_tcp_hole_punching', value);
+
+  bool get disableUdpHolePunching =>
+      _getFlagBool('disable_udp_hole_punching');
+  set disableUdpHolePunching(bool value) =>
+      _setFlagValue('disable_udp_hole_punching', value);
+
+  bool get disableSymHolePunching =>
+      _getFlagBool('disable_sym_hole_punching');
+  set disableSymHolePunching(bool value) =>
+      _setFlagValue('disable_sym_hole_punching', value);
+
+  bool get disableIpv6 => !_getFlagBool('enable_ipv6', fallback: true);
+  set disableIpv6(bool value) => _setFlagValue('enable_ipv6', !value);
+
+  bool get disableEncryption => !_getFlagBool('enable_encryption', fallback: true);
+  set disableEncryption(bool value) => _setFlagValue('enable_encryption', !value);
+
+  String get encryptionAlgorithm =>
+      _getFlagString('encryption_algorithm', fallback: 'aes-gcm');
+  set encryptionAlgorithm(String value) =>
+      _setFlagValue('encryption_algorithm', value.trim());
+
+  List<String> get relayNetworkWhitelist {
+    final raw = _getFlagString('relay_network_whitelist', fallback: '*').trim();
+    if (raw.isEmpty) return const <String>[];
+    return raw.split(RegExp(r'[\s,]+')).where((item) => item.isNotEmpty).toList();
+  }
+
+  set relayNetworkWhitelist(List<String> value) {
+    final normalized = _cleanList(value);
+    _setFlagValue(
+      'relay_network_whitelist',
+      normalized.isEmpty ? '' : normalized.join(' '),
+    );
+  }
+
+  bool get enableRelayNetworkWhitelist {
+    final items = relayNetworkWhitelist;
+    return items.isNotEmpty && !(items.length == 1 && items.first == '*');
+  }
+
+  set enableRelayNetworkWhitelist(bool value) {
+    if (!value) {
+      _setFlagValue('relay_network_whitelist', '*');
+    } else if (!enableRelayNetworkWhitelist) {
+      _setFlagValue('relay_network_whitelist', '');
+    }
+  }
+
+  String get tldDnsZone => _getFlagString('tld_dns_zone', fallback: 'et.net.');
+  set tldDnsZone(String value) => _setFlagValue('tld_dns_zone', value.trim());
+
+  String get compression {
+    final value = _getFlagInt('data_compress_algo', fallback: 1);
+    return switch (value) {
+      2 => 'zstd',
+      _ => '',
+    };
+  }
+
+  set compression(String value) {
+    final normalized = value.trim().toLowerCase();
+    final raw = switch (normalized) {
+      'zstd' => 2,
+      _ => 1,
+    };
+    _setFlagValue('data_compress_algo', raw);
+  }
+
+  Map<String, dynamic>? _getMapPath(List<String> path) {
+    dynamic current = _tomlData;
+    for (final segment in path) {
+      if (current is Map && current[segment] is Map) {
+        current = current[segment];
+      } else {
+        return null;
+      }
+    }
+    return current.cast<String, dynamic>();
+  }
+
+  Map<String, dynamic> _ensureMapPath(List<String> path) {
+    Map<String, dynamic> current = _tomlData;
+    for (final segment in path) {
+      final next = current[segment];
+      if (next is Map<String, dynamic>) {
+        current = next;
+        continue;
+      }
+      if (next is Map) {
+        current = next.cast<String, dynamic>();
+        continue;
+      }
+      final created = <String, dynamic>{};
+      current[segment] = created;
+      current = created;
+    }
+    return current;
+  }
+
+  String _getStringPath(List<String> path, {String fallback = ''}) {
+    dynamic current = _tomlData;
+    for (final segment in path) {
+      if (current is Map && current.containsKey(segment)) {
+        current = current[segment];
+      } else {
+        return fallback;
+      }
+    }
+    return _asString(current, fallback: fallback);
+  }
+
+  List<String> _getStringListPath(List<String> path) {
+    dynamic current = _tomlData;
+    for (final segment in path) {
+      if (current is Map && current.containsKey(segment)) {
+        current = current[segment];
+      } else {
+        return const <String>[];
+      }
+    }
+    return _asStringList(current);
+  }
+
+  List<Map<String, dynamic>> _getMapListPath(List<String> path) {
+    dynamic current = _tomlData;
+    for (final segment in path) {
+      if (current is Map && current.containsKey(segment)) {
+        current = current[segment];
+      } else {
+        return const <Map<String, dynamic>>[];
+      }
+    }
+    if (current is! List) return const <Map<String, dynamic>>[];
+    return current
+        .whereType<Map>()
+        .map((entry) => entry.cast<String, dynamic>())
+        .toList();
+  }
+
+  bool _getBoolPath(List<String> path, {bool fallback = false}) {
+    dynamic current = _tomlData;
+    for (final segment in path) {
+      if (current is Map && current.containsKey(segment)) {
+        current = current[segment];
+      } else {
+        return fallback;
+      }
+    }
+    return current is bool ? current : fallback;
+  }
+
+  int _getIntPath(List<String> path, {int fallback = 0}) {
+    dynamic current = _tomlData;
+    for (final segment in path) {
+      if (current is Map && current.containsKey(segment)) {
+        current = current[segment];
+      } else {
+        return fallback;
+      }
+    }
+    return _asInt(current, fallback: fallback);
+  }
+
+  void _setStringPath(List<String> path, String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      _removePath(path);
+      return;
+    }
+    final parent = _ensureMapPath(path.sublist(0, path.length - 1));
+    parent[path.last] = trimmed;
+  }
+
+  void _setBoolPath(List<String> path, bool value) {
+    final parent = _ensureMapPath(path.sublist(0, path.length - 1));
+    parent[path.last] = value;
+    if (!value) {
+      _removePath(path);
+    }
+  }
+
+  void _setIntPath(List<String> path, int value) {
+    if (value <= 0) {
+      _removePath(path);
+      return;
+    }
+    final parent = _ensureMapPath(path.sublist(0, path.length - 1));
+    parent[path.last] = value;
+  }
+
+  void _setTopLevel(
+    String key,
+    dynamic value, {
+    bool removeIfEmpty = true,
+    bool removeIfFalse = false,
+  }) {
+    if (value == null) {
+      _tomlData.remove(key);
+      return;
+    }
+    if (removeIfEmpty && value is String && value.trim().isEmpty) {
+      _tomlData.remove(key);
+      return;
+    }
+    if (removeIfEmpty && value is List && value.isEmpty) {
+      _tomlData.remove(key);
+      return;
+    }
+    if (removeIfFalse && value == false) {
+      _tomlData.remove(key);
+      return;
+    }
+    _tomlData[key] = value;
+  }
+
+  void _removePath(List<String> path) {
+    if (path.isEmpty) return;
+    final parents = <Map<String, dynamic>>[];
+    Map<String, dynamic>? current = _tomlData;
+    for (int i = 0; i < path.length - 1; i++) {
+      final next = current?[path[i]];
+      if (next is Map<String, dynamic>) {
+        parents.add(current!);
+        current = next;
+        continue;
+      }
+      if (next is Map) {
+        parents.add(current!);
+        current = next.cast<String, dynamic>();
+        continue;
+      }
+      return;
+    }
+    current?.remove(path.last);
+    for (int i = path.length - 2; i >= 0; i--) {
+      final parent = i == 0 ? _tomlData : parents[i - 1][path[i - 1]] as Map<String, dynamic>;
+      final childKey = path[i];
+      final child = parent[childKey];
+      if (child is Map && child.isEmpty) {
+        parent.remove(childKey);
+      }
+    }
+  }
+
+  Map<String, dynamic> _flags() {
+    final existing = _tomlData['flags'];
+    if (existing is Map<String, dynamic>) return existing;
+    if (existing is Map) return existing.cast<String, dynamic>();
+    final created = <String, dynamic>{};
+    _tomlData['flags'] = created;
+    return created;
+  }
+
+  bool _getFlagBool(String key, {bool fallback = false}) {
+    final flags = _getMapPath(const ['flags']);
+    final value = flags?[key];
+    if (value is bool) return value;
+    final defaultValue = _defaultFlags[key];
+    if (defaultValue is bool) return defaultValue;
+    return fallback;
+  }
+
+  int _getFlagInt(String key, {int fallback = 0}) {
+    final flags = _getMapPath(const ['flags']);
+    final value = flags?[key];
+    if (value != null) return _asInt(value, fallback: fallback);
+    final defaultValue = _defaultFlags[key];
+    if (defaultValue != null) return _asInt(defaultValue, fallback: fallback);
+    return fallback;
+  }
+
+  String _getFlagString(String key, {String fallback = ''}) {
+    final flags = _getMapPath(const ['flags']);
+    final value = flags?[key];
+    if (value != null) return _asString(value, fallback: fallback);
+    final defaultValue = _defaultFlags[key];
+    if (defaultValue != null) return _asString(defaultValue, fallback: fallback);
+    return fallback;
+  }
+
+  void _setFlagValue(String key, dynamic value) {
+    final flags = _flags();
+    final defaultValue = _defaultFlags[key];
+    if (_flagEquals(value, defaultValue)) {
+      flags.remove(key);
+    } else {
+      flags[key] = value;
+    }
+    if (flags.isEmpty) {
+      _tomlData.remove('flags');
+    }
+  }
+
+  void _removeFlagValue(String key) {
+    final flags = _getMapPath(const ['flags']);
+    if (flags == null) return;
+    flags.remove(key);
+    if (flags.isEmpty) {
+      _tomlData.remove('flags');
+    }
+  }
+}
+
+String _normalizeId(String? id) {
+  if (id != null && id.trim().isNotEmpty) return id.trim();
+  return _uuid.v4();
+}
+
+bool _flagEquals(dynamic value, dynamic defaultValue) {
+  if (value is String && defaultValue is String) {
+    return value.trim() == defaultValue.trim();
+  }
+  return value == defaultValue;
+}
+
+String _asString(dynamic value, {String fallback = ''}) {
+  if (value == null) return fallback;
+  if (value is String) return value;
+  return value.toString();
+}
+
+int _asInt(dynamic value, {int fallback = 0}) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  final text = value?.toString() ?? '';
+  final direct = int.tryParse(text);
+  if (direct != null) return direct;
+  try {
+    final big = BigInt.parse(text);
+    if (big > BigInt.from(0x7fffffffffffffff)) {
+      return fallback;
+    }
+    return big.toInt();
+  } catch (_) {
+    return fallback;
+  }
+}
+
+List<String> _asStringList(dynamic value) {
+  if (value is! List) return const <String>[];
+  return value.map((item) => item.toString()).toList();
+}
+
+Map<String, dynamic> _deepCopyMap(Map<String, dynamic> input) {
+  final output = <String, dynamic>{};
+  input.forEach((key, value) {
+    output[key] = _deepCopyValue(value);
+  });
+  return output;
+}
+
+dynamic _deepCopyValue(dynamic value) {
+  if (value is Map<String, dynamic>) return _deepCopyMap(value);
+  if (value is Map) {
+    return _deepCopyMap(value.cast<String, dynamic>());
+  }
+  if (value is List) {
+    return value.map(_deepCopyValue).toList();
+  }
+  return value;
+}
+
+List<String> _cleanList(List<String> values) {
+  return values.map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
+}
+
+void _removeDefaultFlags(Map<String, dynamic> data) {
+  final rawFlags = data['flags'];
+  if (rawFlags is! Map) return;
+  final flags = rawFlags.cast<String, dynamic>();
+  final toRemove = <String>[];
+  flags.forEach((key, value) {
+    if (_flagEquals(value, _defaultFlags[key])) {
+      toRemove.add(key);
+    }
+  });
+  for (final key in toRemove) {
+    flags.remove(key);
+  }
+  if (flags.isEmpty) {
+    data.remove('flags');
+  }
+}
+
+void _pruneEmptyValues(Map<String, dynamic> data) {
+  final toRemove = <String>[];
+  data.forEach((key, value) {
+    final normalized = _pruneValue(value);
+    if (normalized == null) {
+      toRemove.add(key);
+    } else {
+      data[key] = normalized;
+    }
+  });
+  for (final key in toRemove) {
+    data.remove(key);
+  }
+}
+
+dynamic _pruneValue(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    _pruneEmptyValues(value);
+    return value.isEmpty ? null : value;
+  }
+  if (value is Map) {
+    final casted = value.cast<String, dynamic>();
+    _pruneEmptyValues(casted);
+    return casted.isEmpty ? null : casted;
+  }
+  if (value is List) {
+    final normalized = value
+        .map(_pruneValue)
+        .where((item) => item != null)
+        .toList();
+    return normalized.isEmpty ? null : normalized;
+  }
+  if (value is String) {
+    return value.trim().isEmpty ? null : value;
+  }
+  return value;
+}
+
+(String, int) _splitHostPort(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return ('', 0);
+  final idx = trimmed.lastIndexOf(':');
+  if (idx <= 0 || idx >= trimmed.length - 1) return (trimmed, 0);
+  final host = trimmed.substring(0, idx);
+  final port = int.tryParse(trimmed.substring(idx + 1)) ?? 0;
+  return (host, port);
+}
+
+String _joinHostPort(String host, int port) {
+  final trimmedHost = host.trim();
+  if (trimmedHost.isEmpty && port <= 0) return '';
+  if (port <= 0) return trimmedHost;
+  return '$trimmedHost:$port';
+}
+
+String _uriHostPort(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+  try {
+    final uri = Uri.parse(trimmed);
+    if (uri.host.isEmpty) return trimmed;
+    final hasPort = uri.hasPort && uri.port > 0;
+    return hasPort ? '${uri.host}:${uri.port}' : uri.host;
+  } catch (_) {
+    return trimmed;
+  }
 }
