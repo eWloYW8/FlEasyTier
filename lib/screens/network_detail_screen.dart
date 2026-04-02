@@ -235,6 +235,8 @@ class _MoreMenu extends StatelessWidget {
           case 'duplicate':
             final json = config.toJson();
             json.remove('id'); // force new UUID
+            json['auto_start'] = false;
+            json['service_enabled'] = false;
             final duplicated = NetworkConfig.fromJson(json);
             duplicated.instanceName = config.instanceName.isNotEmpty
                 ? '${config.instanceName}-copy'
