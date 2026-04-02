@@ -1,3 +1,16 @@
+import org.gradle.internal.os.OperatingSystem
+
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH")
+val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -30,15 +43,65 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Prefer a real release keystore when provided by the environment.
+            // Fall back to the debug key for local development builds.
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+val prepareAndroidJniLibraries by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Cross-compiles EasyTier Android JNI/FFI libraries and embeds them into jniLibs."
+
+    val repoRoot = rootProject.layout.projectDirectory.dir("..").asFile
+    val script = if (OperatingSystem.current().isWindows) {
+        File(repoRoot, "tool/prepare_easytier_android.ps1")
+    } else {
+        File(repoRoot, "tool/prepare_easytier_android.sh")
+    }
+
+    workingDir = repoRoot
+    inputs.dir(File(repoRoot, "third_party/EasyTier"))
+    outputs.dir(layout.projectDirectory.dir("src/main/jniLibs"))
+
+    if (OperatingSystem.current().isWindows) {
+        commandLine(
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            script.absolutePath,
+        )
+    } else {
+        commandLine("bash", script.absolutePath)
+    }
+
+    onlyIf { System.getenv("FLEASYTIER_SKIP_ANDROID_JNI_BUILD") != "1" }
+}
+
+tasks.named("preBuild") {
+    dependsOn(prepareAndroidJniLibraries)
 }

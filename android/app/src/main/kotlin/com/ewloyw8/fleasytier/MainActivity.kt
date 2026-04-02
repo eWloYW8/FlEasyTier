@@ -3,6 +3,7 @@ package com.ewloyw8.fleasytier
 import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -23,24 +24,35 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "prepareVpn" -> prepareVpn(result)
-                    "startVpn" -> {
-                        val ipv4 = call.argument<String>("ipv4") ?: "10.0.0.1"
-                        val cidr = call.argument<Int>("cidr") ?: 24
+                    "startManagedNetwork" -> {
+                        val configId = call.argument<String>("configId")
+                        val instanceName = call.argument<String>("instanceName")
+                        val configToml = call.argument<String>("configToml")
+                        val fallbackIpv4 = call.argument<String>("fallbackIpv4") ?: "10.0.0.1/24"
                         val mtu = call.argument<Int>("mtu") ?: 1300
                         val routes = call.argument<List<String>>("routes") ?: listOf("0.0.0.0/0")
                         val dns = call.argument<String>("dns")
-                        startVpnService(ipv4, cidr, mtu, routes, dns)
+                        if (configId.isNullOrBlank() || instanceName.isNullOrBlank() || configToml.isNullOrBlank()) {
+                            result.error("invalid_args", "configId, instanceName and configToml are required", null)
+                            return@setMethodCallHandler
+                        }
+                        startManagedNetworkService(
+                            configId = configId,
+                            instanceName = instanceName,
+                            configToml = configToml,
+                            fallbackIpv4 = fallbackIpv4,
+                            mtu = mtu,
+                            routes = routes,
+                            dns = dns,
+                        )
                         result.success(null)
                     }
-                    "stopVpn" -> {
-                        stopVpnService()
+                    "stopManagedNetwork" -> {
+                        stopManagedNetworkService()
                         result.success(null)
                     }
-                    "getVpnStatus" -> {
-                        result.success(mapOf(
-                            "running" to EasyTierVpnService.isRunning,
-                            "fd" to EasyTierVpnService.vpnFd
-                        ))
+                    "getManagedNetworkStatus" -> {
+                        result.success(EasyTierVpnService.getStatus())
                     }
                     else -> result.notImplemented()
                 }
@@ -58,25 +70,29 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startVpnService(
-        ipv4: String,
-        cidr: Int,
+    private fun startManagedNetworkService(
+        configId: String,
+        instanceName: String,
+        configToml: String,
+        fallbackIpv4: String,
         mtu: Int,
         routes: List<String>,
         dns: String?
     ) {
         val intent = Intent(this, EasyTierVpnService::class.java).apply {
             action = EasyTierVpnService.ACTION_START
-            putExtra("ipv4", ipv4)
-            putExtra("cidr", cidr)
+            putExtra("configId", configId)
+            putExtra("instanceName", instanceName)
+            putExtra("configToml", configToml)
+            putExtra("fallbackIpv4", fallbackIpv4)
             putExtra("mtu", mtu)
-            putStringArrayListExtra("routes", ArrayList(routes))
+            putStringArrayListExtra("fallbackRoutes", ArrayList(routes))
             if (dns != null) putExtra("dns", dns)
         }
-        startService(intent)
+        ContextCompat.startForegroundService(this, intent)
     }
 
-    private fun stopVpnService() {
+    private fun stopManagedNetworkService() {
         val intent = Intent(this, EasyTierVpnService::class.java).apply {
             action = EasyTierVpnService.ACTION_STOP
         }

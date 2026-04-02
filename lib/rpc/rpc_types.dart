@@ -37,11 +37,11 @@ class RpcDescriptor {
   }
 
   factory RpcDescriptor.fromFields(ProtoFields f) => RpcDescriptor(
-        domainName: f.getString(1),
-        protoName: f.getString(2),
-        serviceName: f.getString(3),
-        methodIndex: f.getVarint(4),
-      );
+    domainName: f.getString(1),
+    protoName: f.getString(2),
+    serviceName: f.getString(3),
+    methodIndex: f.getVarint(4),
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -65,9 +65,9 @@ class RpcCompressionInfo {
   }
 
   factory RpcCompressionInfo.fromFields(ProtoFields f) => RpcCompressionInfo(
-        algo: f.getVarint(1, compressionNone),
-        acceptedAlgo: f.getVarint(2, compressionNone),
-      );
+    algo: f.getVarint(1, compressionNone),
+    acceptedAlgo: f.getVarint(2, compressionNone),
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -126,8 +126,9 @@ class RpcPacket {
       fromPeer: f.getVarint(1, 1),
       toPeer: f.getVarint(2, 1),
       transactionId: f.getVarint(3),
-      descriptor:
-          descFields != null ? RpcDescriptor.fromFields(descFields) : null,
+      descriptor: descFields != null
+          ? RpcDescriptor.fromFields(descFields)
+          : null,
       body: f.getBytes(5),
       isRequest: f.getBool(6),
       totalPieces: f.getVarint(7, 1),
@@ -167,11 +168,7 @@ class RpcResponse {
   final RpcError? error;
   final int runtimeUs;
 
-  const RpcResponse({
-    required this.response,
-    this.error,
-    this.runtimeUs = 0,
-  });
+  const RpcResponse({required this.response, this.error, this.runtimeUs = 0});
 
   bool get hasError => error != null;
 
@@ -228,55 +225,66 @@ abstract final class EtRpc {
   //   ListForeignNetwork=4, ListGlobalForeignNetwork=5, ShowNodeInfo=6,
   //   GetForeignNetworkSummary=7
   static const listPeer = RpcDescriptor(
-      protoName: 'PeerManageRpc',
-      serviceName: 'PeerManageRpc',
-      methodIndex: 1);
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 1,
+  );
   static const listRoute = RpcDescriptor(
-      protoName: 'PeerManageRpc',
-      serviceName: 'PeerManageRpc',
-      methodIndex: 2);
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 2,
+  );
   static const dumpRoute = RpcDescriptor(
-      protoName: 'PeerManageRpc',
-      serviceName: 'PeerManageRpc',
-      methodIndex: 3);
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 3,
+  );
   static const listForeignNetwork = RpcDescriptor(
-      protoName: 'PeerManageRpc',
-      serviceName: 'PeerManageRpc',
-      methodIndex: 4);
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 4,
+  );
   static const listGlobalForeignNetwork = RpcDescriptor(
-      protoName: 'PeerManageRpc',
-      serviceName: 'PeerManageRpc',
-      methodIndex: 5);
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 5,
+  );
   static const showNodeInfo = RpcDescriptor(
-      protoName: 'PeerManageRpc',
-      serviceName: 'PeerManageRpc',
-      methodIndex: 6);
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 6,
+  );
 
   // ConnectorManageRpc — ListConnector=1
   static const listConnector = RpcDescriptor(
-      protoName: 'ConnectorManageRpc',
-      serviceName: 'ConnectorManageRpc',
-      methodIndex: 1);
+    protoName: 'ConnectorManageRpc',
+    serviceName: 'ConnectorManageRpc',
+    methodIndex: 1,
+  );
 
   // VpnPortalRpc — GetVpnPortalInfo=1
   static const getVpnPortalInfo = RpcDescriptor(
-      protoName: 'VpnPortalRpc',
-      serviceName: 'VpnPortalRpc',
-      methodIndex: 1);
+    protoName: 'VpnPortalRpc',
+    serviceName: 'VpnPortalRpc',
+    methodIndex: 1,
+  );
 
   // StatsRpc — GetStats=1, GetPrometheusStats=2
   static const getStats = RpcDescriptor(
-      protoName: 'StatsRpc',
-      serviceName: 'StatsRpc',
-      methodIndex: 1);
+    protoName: 'StatsRpc',
+    serviceName: 'StatsRpc',
+    methodIndex: 1,
+  );
 
   // LoggerRpc — SetLoggerConfig=1, GetLoggerConfig=2
   static const setLoggerConfig = RpcDescriptor(
-      protoName: 'LoggerRpc',
-      serviceName: 'LoggerRpc',
-      methodIndex: 1);
+    protoName: 'LoggerRpc',
+    serviceName: 'LoggerRpc',
+    methodIndex: 1,
+  );
   static const getLoggerConfig = RpcDescriptor(
-      protoName: 'LoggerRpc',
-      serviceName: 'LoggerRpc',
-      methodIndex: 2);
+    protoName: 'LoggerRpc',
+    serviceName: 'LoggerRpc',
+    methodIndex: 2,
+  );
 }

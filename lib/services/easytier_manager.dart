@@ -11,12 +11,13 @@ import '../rpc/easytier_api.dart';
 import '../rpc/rpc_client.dart';
 import 'privileged_session.dart';
 
-typedef AppLogWriter = void Function(
-  AppLogLevel level,
-  String message, {
-  String category,
-  String? detail,
-});
+typedef AppLogWriter =
+    void Function(
+      AppLogLevel level,
+      String message, {
+      String category,
+      String? detail,
+    });
 
 class EasyTierManager {
   String? coreBinaryPath;
@@ -31,12 +32,14 @@ class EasyTierManager {
   final Map<String, _FileLogCache> _fileLogCaches = {};
   final PrivilegedSession _privilegedSession = PrivilegedSession();
 
-  void Function(String configId, int exitCode, String? detail)? onInstanceStopped;
+  void Function(String configId, int exitCode, String? detail)?
+  onInstanceStopped;
   AppLogWriter? onLog;
 
   Future<void> init() async {
     final appDir = await getApplicationSupportDirectory();
-    _configDir = '${appDir.path}${Platform.pathSeparator}FlEasyTier'
+    _configDir =
+        '${appDir.path}${Platform.pathSeparator}FlEasyTier'
         '${Platform.pathSeparator}configs';
     await Directory(_configDir).create(recursive: true);
   }
@@ -53,14 +56,20 @@ class EasyTierManager {
       _coreVersionCache = null;
     }
 
+    if (Platform.isAndroid) {
+      coreBinaryPath = null;
+      onLog?.call(
+        AppLogLevel.info,
+        'Android uses the embedded JNI runtime managed by the foreground VPN service',
+        category: 'Binary',
+      );
+      return;
+    }
+
     final ext = Platform.isWindows ? '.exe' : '';
     final coreName = 'easytier-core$ext';
 
-    final searchDirs = <String>[
-      _exeDir,
-      '$_exeDir/bin',
-      '$_exeDir/easytier',
-    ];
+    final searchDirs = <String>[_exeDir, '$_exeDir/bin', '$_exeDir/easytier'];
 
     if (Platform.isWindows) {
       searchDirs.addAll([
@@ -148,7 +157,8 @@ class EasyTierManager {
 
   Future<String?> startInstance(NetworkConfig config) async {
     if (coreBinaryPath == null) return 'EasyTier core binary not found';
-    if (_processes.containsKey(config.id) || _privilegedProcesses.contains(config.id)) {
+    if (_processes.containsKey(config.id) ||
+        _privilegedProcesses.contains(config.id)) {
       return 'Already running';
     }
 
@@ -261,7 +271,8 @@ class EasyTierManager {
   }
 
   bool isRunning(String configId) =>
-      _processes.containsKey(configId) || _privilegedProcesses.contains(configId);
+      _processes.containsKey(configId) ||
+      _privilegedProcesses.contains(configId);
 
   Future<bool> isLocalRunning(String configId) async {
     if (_processes.containsKey(configId)) return true;
@@ -292,10 +303,7 @@ class EasyTierManager {
   }
 
   Future<LogCleanupResult> clearAllLocalLogs(List<NetworkConfig> configs) {
-    return _cleanupLocalLogs(
-      configs,
-      shouldClear: (_) => true,
-    );
+    return _cleanupLocalLogs(configs, shouldClear: (_) => true);
   }
 
   Future<LogCleanupResult> clearOversizedLocalLogs(
@@ -312,6 +320,9 @@ class EasyTierManager {
   }
 
   Future<String?> validateLocalStart(NetworkConfig config) async {
+    if (Platform.isAndroid) {
+      return null;
+    }
     if (coreBinaryPath == null) {
       return 'EasyTier core binary not found';
     }
@@ -361,7 +372,7 @@ class EasyTierManager {
           return ManagedServiceStatus.notInstalled;
       }
     } catch (_) {
-        return ManagedServiceStatus.notInstalled;
+      return ManagedServiceStatus.notInstalled;
     }
   }
 
@@ -598,7 +609,8 @@ class EasyTierManager {
     if (!Platform.isLinux) return ServiceBackend.unsupported;
 
     if (await _commandExists('systemctl')) return ServiceBackend.systemd;
-    if (await _commandExists('rc-service') && await _commandExists('rc-update')) {
+    if (await _commandExists('rc-service') &&
+        await _commandExists('rc-update')) {
       return ServiceBackend.openrc;
     }
     return ServiceBackend.unsupported;
@@ -668,7 +680,9 @@ class EasyTierManager {
     }
   }
 
-  Future<ManagedServiceStatus> _getWindowsServiceStatus(String serviceName) async {
+  Future<ManagedServiceStatus> _getWindowsServiceStatus(
+    String serviceName,
+  ) async {
     final result = await _run('sc.exe', ['query', serviceName]);
     if (result.exitCode != 0) {
       final output = _mergedOutput(result).toLowerCase();
@@ -770,11 +784,10 @@ class EasyTierManager {
       if (!_isSuccessMessage(stopMsg)) return stopMsg;
     }
 
-    final delete = await _run(
-      'sc.exe',
-      ['delete', serviceName],
-      allowPrivilegeRetry: true,
-    );
+    final delete = await _run('sc.exe', [
+      'delete',
+      serviceName,
+    ], allowPrivilegeRetry: true);
     if (delete.exitCode != 0) {
       return _errorMessage(delete, fallback: 'failed to uninstall service');
     }
@@ -799,11 +812,10 @@ class EasyTierManager {
       return 'Service is already running';
     }
 
-    final result = await _run(
-      'sc.exe',
-      ['start', serviceName],
-      allowPrivilegeRetry: true,
-    );
+    final result = await _run('sc.exe', [
+      'start',
+      serviceName,
+    ], allowPrivilegeRetry: true);
     if (result.exitCode != 0) {
       return _errorMessage(result, fallback: 'failed to start service');
     }
@@ -820,11 +832,10 @@ class EasyTierManager {
       return 'Service is already stopped';
     }
 
-    final result = await _run(
-      'sc.exe',
-      ['stop', serviceName],
-      allowPrivilegeRetry: true,
-    );
+    final result = await _run('sc.exe', [
+      'stop',
+      serviceName,
+    ], allowPrivilegeRetry: true);
     if (result.exitCode != 0) {
       return _errorMessage(result, fallback: 'failed to stop service');
     }
@@ -850,16 +861,27 @@ class EasyTierManager {
     return '"${value.replaceAll('"', r'\"')}"';
   }
 
-  Future<ManagedServiceStatus> _getSystemdServiceStatus(String serviceName) async {
+  Future<ManagedServiceStatus> _getSystemdServiceStatus(
+    String serviceName,
+  ) async {
     final unit = '$serviceName.service';
-    final load = await _run('systemctl', ['show', unit, '--property=LoadState', '--value']);
+    final load = await _run('systemctl', [
+      'show',
+      unit,
+      '--property=LoadState',
+      '--value',
+    ]);
     final loadValue = _firstMeaningfulLine(load);
     if (load.exitCode != 0 || loadValue == 'not-found') {
       return ManagedServiceStatus.notInstalled;
     }
 
-    final active =
-        await _run('systemctl', ['show', unit, '--property=ActiveState', '--value']);
+    final active = await _run('systemctl', [
+      'show',
+      unit,
+      '--property=ActiveState',
+      '--value',
+    ]);
     final activeValue = _firstMeaningfulLine(active);
     if (activeValue == 'active' || activeValue == 'activating') {
       return ManagedServiceStatus.running;
@@ -873,16 +895,21 @@ class EasyTierManager {
     final status = await _getSystemdServiceStatus(serviceName);
 
     if (!await _hasUnixRootPrivileges()) {
-      final result = await _runElevatedShellScript([
-        "systemctl stop '$serviceName.service' >/dev/null 2>&1 || true",
-        "cat > '${_systemdUnitPath(serviceName)}' <<'EOF'",
-        _makeSystemdUnit(config),
-        'EOF',
-        'systemctl daemon-reload',
-        "systemctl enable '$serviceName.service'",
-      ].join('\n'));
+      final result = await _runElevatedShellScript(
+        [
+          "systemctl stop '$serviceName.service' >/dev/null 2>&1 || true",
+          "cat > '${_systemdUnitPath(serviceName)}' <<'EOF'",
+          _makeSystemdUnit(config),
+          'EOF',
+          'systemctl daemon-reload',
+          "systemctl enable '$serviceName.service'",
+        ].join('\n'),
+      );
       if (result.exitCode != 0) {
-        return _errorMessage(result, fallback: 'failed to install systemd service');
+        return _errorMessage(
+          result,
+          fallback: 'failed to install systemd service',
+        );
       }
       return status == ManagedServiceStatus.notInstalled
           ? 'Service installed'
@@ -890,11 +917,10 @@ class EasyTierManager {
     }
 
     if (status == ManagedServiceStatus.running) {
-      final stop = await _run(
-        'systemctl',
-        ['stop', '$serviceName.service'],
-        allowPrivilegeRetry: true,
-      );
+      final stop = await _run('systemctl', [
+        'stop',
+        '$serviceName.service',
+      ], allowPrivilegeRetry: true);
       if (stop.exitCode != 0) {
         return _errorMessage(stop, fallback: 'failed to stop running service');
       }
@@ -902,11 +928,9 @@ class EasyTierManager {
 
     await file.writeAsString(_makeSystemdUnit(config));
 
-    final reload = await _run(
-      'systemctl',
-      ['daemon-reload'],
-      allowPrivilegeRetry: true,
-    );
+    final reload = await _run('systemctl', [
+      'daemon-reload',
+    ], allowPrivilegeRetry: true);
     if (reload.exitCode != 0) {
       return _errorMessage(reload, fallback: 'failed to reload systemd');
     }
@@ -934,40 +958,39 @@ class EasyTierManager {
     }
 
     if (!await _hasUnixRootPrivileges()) {
-      final result = await _runElevatedShellScript([
-        "systemctl disable --now '$unit' >/dev/null 2>&1 || true",
-        "rm -f '${_systemdUnitPath(serviceName)}'",
-        'systemctl daemon-reload',
-        "systemctl reset-failed '$unit' >/dev/null 2>&1 || true",
-      ].join('\n'));
+      final result = await _runElevatedShellScript(
+        [
+          "systemctl disable --now '$unit' >/dev/null 2>&1 || true",
+          "rm -f '${_systemdUnitPath(serviceName)}'",
+          'systemctl daemon-reload',
+          "systemctl reset-failed '$unit' >/dev/null 2>&1 || true",
+        ].join('\n'),
+      );
       if (result.exitCode != 0) {
-        return _errorMessage(result, fallback: 'failed to uninstall systemd service');
+        return _errorMessage(
+          result,
+          fallback: 'failed to uninstall systemd service',
+        );
       }
       return 'Service uninstalled';
     }
 
-    await _run(
-      'systemctl',
-      ['disable', '--now', unit],
-      allowPrivilegeRetry: true,
-    );
+    await _run('systemctl', [
+      'disable',
+      '--now',
+      unit,
+    ], allowPrivilegeRetry: true);
     if (await file.exists()) {
       await file.delete();
     }
 
-    final reload = await _run(
-      'systemctl',
-      ['daemon-reload'],
-      allowPrivilegeRetry: true,
-    );
+    final reload = await _run('systemctl', [
+      'daemon-reload',
+    ], allowPrivilegeRetry: true);
     if (reload.exitCode != 0) {
       return _errorMessage(reload, fallback: 'failed to reload systemd');
     }
-    await _run(
-      'systemctl',
-      ['reset-failed', unit],
-      allowPrivilegeRetry: true,
-    );
+    await _run('systemctl', ['reset-failed', unit], allowPrivilegeRetry: true);
     return 'Service uninstalled';
   }
 
@@ -978,7 +1001,8 @@ class EasyTierManager {
     final args = _serviceCliArgs(config).map(_systemdEscape).join(' ');
     final targetApp = _systemdEscape(coreBinaryPath!);
     final workDir = _systemdEscape(_configDir);
-    final description = 'FlEasyTier managed EasyTier network ${config.displayName}';
+    final description =
+        'FlEasyTier managed EasyTier network ${config.displayName}';
 
     return [
       '[Unit]',
@@ -1012,7 +1036,9 @@ class EasyTierManager {
     return '"$escaped"';
   }
 
-  Future<ManagedServiceStatus> _getOpenRcServiceStatus(String serviceName) async {
+  Future<ManagedServiceStatus> _getOpenRcServiceStatus(
+    String serviceName,
+  ) async {
     final file = File('/etc/init.d/$serviceName');
     if (!await file.exists()) return ManagedServiceStatus.notInstalled;
 
@@ -1027,16 +1053,21 @@ class EasyTierManager {
     final status = await _getOpenRcServiceStatus(serviceName);
 
     if (!await _hasUnixRootPrivileges()) {
-      final result = await _runElevatedShellScript([
-        "rc-service '$serviceName' stop >/dev/null 2>&1 || true",
-        "cat > '/etc/init.d/$serviceName' <<'EOF'",
-        _makeOpenRcScript(config),
-        'EOF',
-        "chmod 755 '/etc/init.d/$serviceName'",
-        "rc-update add '$serviceName' default",
-      ].join('\n'));
+      final result = await _runElevatedShellScript(
+        [
+          "rc-service '$serviceName' stop >/dev/null 2>&1 || true",
+          "cat > '/etc/init.d/$serviceName' <<'EOF'",
+          _makeOpenRcScript(config),
+          'EOF',
+          "chmod 755 '/etc/init.d/$serviceName'",
+          "rc-update add '$serviceName' default",
+        ].join('\n'),
+      );
       if (result.exitCode != 0) {
-        return _errorMessage(result, fallback: 'failed to install OpenRC service');
+        return _errorMessage(
+          result,
+          fallback: 'failed to install OpenRC service',
+        );
       }
       return status == ManagedServiceStatus.notInstalled
           ? 'Service installed'
@@ -1044,11 +1075,10 @@ class EasyTierManager {
     }
 
     if (status == ManagedServiceStatus.running) {
-      final stop = await _run(
-        'rc-service',
-        [serviceName, 'stop'],
-        allowPrivilegeRetry: true,
-      );
+      final stop = await _run('rc-service', [
+        serviceName,
+        'stop',
+      ], allowPrivilegeRetry: true);
       if (stop.exitCode != 0) {
         return _errorMessage(stop, fallback: 'failed to stop running service');
       }
@@ -1080,27 +1110,28 @@ class EasyTierManager {
     }
 
     if (!await _hasUnixRootPrivileges()) {
-      final result = await _runElevatedShellScript([
-        "rc-service '$serviceName' stop >/dev/null 2>&1 || true",
-        "rc-update del '$serviceName' default >/dev/null 2>&1 || true",
-        "rm -f '/etc/init.d/$serviceName'",
-      ].join('\n'));
+      final result = await _runElevatedShellScript(
+        [
+          "rc-service '$serviceName' stop >/dev/null 2>&1 || true",
+          "rc-update del '$serviceName' default >/dev/null 2>&1 || true",
+          "rm -f '/etc/init.d/$serviceName'",
+        ].join('\n'),
+      );
       if (result.exitCode != 0) {
-        return _errorMessage(result, fallback: 'failed to uninstall OpenRC service');
+        return _errorMessage(
+          result,
+          fallback: 'failed to uninstall OpenRC service',
+        );
       }
       return 'Service uninstalled';
     }
 
-    await _run(
-      'rc-service',
-      [serviceName, 'stop'],
-      allowPrivilegeRetry: true,
-    );
-    await _run(
-      'rc-update',
-      ['del', serviceName, 'default'],
-      allowPrivilegeRetry: true,
-    );
+    await _run('rc-service', [serviceName, 'stop'], allowPrivilegeRetry: true);
+    await _run('rc-update', [
+      'del',
+      serviceName,
+      'default',
+    ], allowPrivilegeRetry: true);
     if (await file.exists()) {
       await file.delete();
     }
@@ -1133,7 +1164,9 @@ class EasyTierManager {
     ].join('\n');
   }
 
-  Future<ManagedServiceStatus> _getLaunchdServiceStatus(NetworkConfig config) async {
+  Future<ManagedServiceStatus> _getLaunchdServiceStatus(
+    NetworkConfig config,
+  ) async {
     final plist = File(_launchdPlistPath(config));
     if (!await plist.exists()) return ManagedServiceStatus.notInstalled;
 
@@ -1156,17 +1189,22 @@ class EasyTierManager {
     final status = await _getLaunchdServiceStatus(config);
 
     if (!await _hasUnixRootPrivileges()) {
-      final result = await _runElevatedShellScript([
-        "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
-        "cat > '$plistPath' <<'EOF'",
-        _makeLaunchdPlist(config),
-        'EOF',
-        "chmod 644 '$plistPath'",
-        "chown root:wheel '$plistPath'",
-        "launchctl bootstrap system '$plistPath'",
-      ].join('\n'));
+      final result = await _runElevatedShellScript(
+        [
+          "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
+          "cat > '$plistPath' <<'EOF'",
+          _makeLaunchdPlist(config),
+          'EOF',
+          "chmod 644 '$plistPath'",
+          "chown root:wheel '$plistPath'",
+          "launchctl bootstrap system '$plistPath'",
+        ].join('\n'),
+      );
       if (result.exitCode != 0) {
-        return _errorMessage(result, fallback: 'failed to install launchd service');
+        return _errorMessage(
+          result,
+          fallback: 'failed to install launchd service',
+        );
       }
       return status == ManagedServiceStatus.notInstalled
           ? 'Service installed'
@@ -1174,25 +1212,26 @@ class EasyTierManager {
     }
 
     if (status == ManagedServiceStatus.running) {
-      await _run(
-        'launchctl',
-        ['bootout', 'system/${_launchdLabel(config)}'],
-        allowPrivilegeRetry: true,
-      );
+      await _run('launchctl', [
+        'bootout',
+        'system/${_launchdLabel(config)}',
+      ], allowPrivilegeRetry: true);
     }
 
     await plist.writeAsString(_makeLaunchdPlist(config));
     await _run('chmod', ['644', plistPath], allowPrivilegeRetry: true);
     await _run('chown', ['root:wheel', plistPath], allowPrivilegeRetry: true);
 
-    final bootstrap =
-        await _run(
-          'launchctl',
-          ['bootstrap', 'system', plistPath],
-          allowPrivilegeRetry: true,
-        );
+    final bootstrap = await _run('launchctl', [
+      'bootstrap',
+      'system',
+      plistPath,
+    ], allowPrivilegeRetry: true);
     if (bootstrap.exitCode != 0) {
-      return _errorMessage(bootstrap, fallback: 'failed to bootstrap launchd service');
+      return _errorMessage(
+        bootstrap,
+        fallback: 'failed to bootstrap launchd service',
+      );
     }
 
     return status == ManagedServiceStatus.notInstalled
@@ -1206,22 +1245,26 @@ class EasyTierManager {
     final status = await _getLaunchdServiceStatus(config);
 
     if (!await _hasUnixRootPrivileges()) {
-      final result = await _runElevatedShellScript([
-        "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
-        "rm -f '$plistPath'",
-      ].join('\n'));
+      final result = await _runElevatedShellScript(
+        [
+          "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
+          "rm -f '$plistPath'",
+        ].join('\n'),
+      );
       if (result.exitCode != 0) {
-        return _errorMessage(result, fallback: 'failed to uninstall launchd service');
+        return _errorMessage(
+          result,
+          fallback: 'failed to uninstall launchd service',
+        );
       }
       return 'Service uninstalled';
     }
 
     if (status != ManagedServiceStatus.notInstalled) {
-      await _run(
-        'launchctl',
-        ['bootout', 'system/${_launchdLabel(config)}'],
-        allowPrivilegeRetry: true,
-      );
+      await _run('launchctl', [
+        'bootout',
+        'system/${_launchdLabel(config)}',
+      ], allowPrivilegeRetry: true);
     } else if (!await plist.exists()) {
       return 'Service is not installed';
     }
@@ -1240,22 +1283,22 @@ class EasyTierManager {
     final label = _launchdLabel(config);
     final status = await _getLaunchdServiceStatus(config);
     if (status == ManagedServiceStatus.running) {
-      final kick = await _run(
-        'launchctl',
-        ['kickstart', '-k', 'system/$label'],
-        allowPrivilegeRetry: true,
-      );
+      final kick = await _run('launchctl', [
+        'kickstart',
+        '-k',
+        'system/$label',
+      ], allowPrivilegeRetry: true);
       if (kick.exitCode != 0) {
         return _errorMessage(kick, fallback: 'failed to restart service');
       }
       return 'Service started';
     }
 
-    final bootstrap = await _run(
-      'launchctl',
-      ['bootstrap', 'system', plistPath],
-      allowPrivilegeRetry: true,
-    );
+    final bootstrap = await _run('launchctl', [
+      'bootstrap',
+      'system',
+      plistPath,
+    ], allowPrivilegeRetry: true);
     if (bootstrap.exitCode != 0) {
       return _errorMessage(bootstrap, fallback: 'failed to start service');
     }
@@ -1271,12 +1314,10 @@ class EasyTierManager {
       return 'Service is already stopped';
     }
 
-    final result =
-        await _run(
-          'launchctl',
-          ['bootout', 'system/${_launchdLabel(config)}'],
-          allowPrivilegeRetry: true,
-        );
+    final result = await _run('launchctl', [
+      'bootout',
+      'system/${_launchdLabel(config)}',
+    ], allowPrivilegeRetry: true);
     if (result.exitCode != 0) {
       return _errorMessage(result, fallback: 'failed to stop service');
     }
@@ -1290,9 +1331,10 @@ class EasyTierManager {
       '/Library/LaunchDaemons/${_launchdLabel(config)}.plist';
 
   String _makeLaunchdPlist(NetworkConfig config) {
-    final args = [coreBinaryPath!, ..._serviceCliArgs(config)]
-        .map((arg) => '    <string>${_xmlEscape(arg)}</string>')
-        .join('\n');
+    final args = [
+      coreBinaryPath!,
+      ..._serviceCliArgs(config),
+    ].map((arg) => '    <string>${_xmlEscape(arg)}</string>').join('\n');
 
     return [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -1470,16 +1512,10 @@ class EasyTierManager {
       ]);
     }
     if (config.fileLogLevel.isEmpty) {
-      args.addAll([
-        '--file-log-level',
-        'info',
-      ]);
+      args.addAll(['--file-log-level', 'info']);
     }
     if (config.fileLogDir.isEmpty) {
-      args.addAll([
-        '--file-log-dir',
-        _effectiveServiceLogDir(config),
-      ]);
+      args.addAll(['--file-log-dir', _effectiveServiceLogDir(config)]);
     }
 
     return args;
@@ -1568,7 +1604,10 @@ class EasyTierManager {
 
     for (final dir in targets) {
       if (!await dir.exists()) continue;
-      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      await for (final entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is! File) continue;
         try {
           if (!shouldClear(entity)) continue;
@@ -1608,12 +1647,14 @@ class EasyTierManager {
     }
 
     final candidates = cleaned
-        .where((line) =>
-            line.contains('Failed to') ||
-            line.contains('error:') ||
-            line.contains('ERROR') ||
-            line.contains('拒绝访问') ||
-            line.contains('stopped with error'))
+        .where(
+          (line) =>
+              line.contains('Failed to') ||
+              line.contains('error:') ||
+              line.contains('ERROR') ||
+              line.contains('拒绝访问') ||
+              line.contains('stopped with error'),
+        )
         .toList();
     final source = candidates.isNotEmpty ? candidates : cleaned;
     final start = source.length > 4 ? source.length - 4 : 0;
@@ -1623,8 +1664,9 @@ class EasyTierManager {
   }
 
   String _cleanLogLine(String line) {
-    final withoutAnsi =
-        line.replaceAll(RegExp(r'\x1B\[[0-9;?]*[ -/]*[@-~]'), '').trim();
+    final withoutAnsi = line
+        .replaceAll(RegExp(r'\x1B\[[0-9;?]*[ -/]*[@-~]'), '')
+        .trim();
     if (withoutAnsi.startsWith('[ERR] ')) {
       return withoutAnsi.substring(6).trim();
     }
@@ -1633,28 +1675,15 @@ class EasyTierManager {
 }
 
 class LogCleanupResult {
-  const LogCleanupResult({
-    this.clearedFiles = 0,
-    this.clearedBytes = 0,
-  });
+  const LogCleanupResult({this.clearedFiles = 0, this.clearedBytes = 0});
 
   final int clearedFiles;
   final int clearedBytes;
 }
 
-enum ManagedServiceStatus {
-  notInstalled,
-  stopped,
-  running,
-}
+enum ManagedServiceStatus { notInstalled, stopped, running }
 
-enum ServiceBackend {
-  windows,
-  systemd,
-  openrc,
-  launchd,
-  unsupported,
-}
+enum ServiceBackend { windows, systemd, openrc, launchd, unsupported }
 
 /// Incrementally reads a log file, caching lines and tracking the last
 /// read position so each poll only reads newly appended bytes.
@@ -1697,8 +1726,10 @@ class _FileLogCache {
         final readBytes = length < _initialMaxBytes ? length : _initialMaxBytes;
         raf.setPositionSync(length - readBytes);
         final bytes = raf.readSync(readBytes);
-        final start =
-            _safeUtf8Start(bytes, truncated: length > _initialMaxBytes);
+        final start = _safeUtf8Start(
+          bytes,
+          truncated: length > _initialMaxBytes,
+        );
         final text = utf8.decode(bytes.sublist(start), allowMalformed: true);
         lines.addAll(const LineSplitter().convert(text));
       } else if (length > _lastOffset) {

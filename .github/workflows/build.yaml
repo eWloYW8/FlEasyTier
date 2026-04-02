@@ -21,6 +21,9 @@ jobs:
           - platform: linux
             os: ubuntu-22.04
             arch: amd64
+          - platform: android
+            os: ubuntu-22.04
+            arch: universal
           - platform: macos
             os: macos-15
             arch: amd64
@@ -43,10 +46,22 @@ jobs:
           workspaces: third_party/EasyTier
 
       - name: Install Linux Dependencies
-        if: matrix.platform == 'linux'
+        if: matrix.platform == 'linux' || matrix.platform == 'android'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libgtk-3-dev libayatana-appindicator3-dev pkg-config protobuf-compiler
+
+      - name: Setup Java
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Setup Android SDK
+        if: matrix.platform == 'android'
+        uses: android-actions/setup-android@v3
 
       - name: Install macOS Dependencies
         if: matrix.platform == 'macos'
@@ -74,6 +89,35 @@ jobs:
       - name: Build Linux
         if: matrix.platform == 'linux'
         run: flutter build linux --release
+
+      - name: Build Android JNI Libraries
+        if: matrix.platform == 'android'
+        run: bash tool/prepare_easytier_android.sh
+
+      - name: Prepare Android Release Keystore
+        if: matrix.platform == 'android'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          KEYSTORE_PATH="$RUNNER_TEMP/android-release.keystore"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Build Android APK
+        if: matrix.platform == 'android'
+        env:
+          FLEASYTIER_SKIP_ANDROID_JNI_BUILD: 1
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build apk --release
 
       - name: Build macOS
         if: matrix.platform == 'macos'
@@ -104,6 +148,13 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           cd build/linux/x64/release/bundle
           tar -czf "${GITHUB_WORKSPACE}/FlEasyTier-${VERSION}-linux-${{ matrix.arch }}.tar.gz" .
+
+      - name: Package Android APK
+        if: matrix.platform == 'android'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "${GITHUB_WORKSPACE}/FlEasyTier-${VERSION}-android.apk"
 
       - name: Package macOS
         if: matrix.platform == 'macos'

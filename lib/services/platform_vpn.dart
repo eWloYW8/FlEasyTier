@@ -27,39 +27,41 @@ class PlatformVpn {
     return result ?? false;
   }
 
-  /// Start the Android VPN service.
-  static Future<void> startVpn({
-    required String ipv4,
-    int cidr = 24,
+  /// Start the Android foreground service that owns the embedded JNI runtime.
+  static Future<void> startManagedNetwork({
+    required String configId,
+    required String instanceName,
+    required String configToml,
+    required String fallbackIpv4,
     int mtu = 1300,
     List<String> routes = const ['0.0.0.0/0'],
     String? dns,
   }) async {
     if (!Platform.isAndroid) return;
-    await _channel.invokeMethod('startVpn', {
-      'ipv4': ipv4,
-      'cidr': cidr,
+    await _channel.invokeMethod('startManagedNetwork', {
+      'configId': configId,
+      'instanceName': instanceName,
+      'configToml': configToml,
+      'fallbackIpv4': fallbackIpv4,
       'mtu': mtu,
       'routes': routes,
       'dns': dns,
     });
   }
 
-  /// Stop the Android VPN service.
-  static Future<void> stopVpn() async {
+  /// Stop the Android foreground service and all JNI-managed instances.
+  static Future<void> stopManagedNetwork() async {
     if (!Platform.isAndroid) return;
-    await _channel.invokeMethod('stopVpn');
+    await _channel.invokeMethod('stopManagedNetwork');
   }
 
-  /// Get current VPN status (Android only).
-  static Future<({bool running, int fd})> getVpnStatus() async {
-    if (!Platform.isAndroid) return (running: false, fd: -1);
-    final result =
-        await _channel.invokeMapMethod<String, dynamic>('getVpnStatus');
-    return (
-      running: result?['running'] as bool? ?? false,
-      fd: result?['fd'] as int? ?? -1,
+  /// Get the current Android foreground service status and last snapshot payload.
+  static Future<Map<String, dynamic>> getManagedNetworkStatus() async {
+    if (!Platform.isAndroid) return const {};
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'getManagedNetworkStatus',
     );
+    return result ?? const {};
   }
 
   // ── Platform requirements info ──

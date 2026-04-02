@@ -11,7 +11,7 @@ class EasyTierApi {
   final RpcClient _client;
 
   EasyTierApi({required String host, required int port})
-      : _client = RpcClient(host: host, port: port);
+    : _client = RpcClient(host: host, port: port);
 
   bool get connected => _client.connected;
 
@@ -272,14 +272,14 @@ const _natTypeNames = {
 String _natTypeStr(int value) => _natTypeNames[value] ?? 'Unknown';
 
 String _secureAuthLevel(int value) => switch (value) {
-      1 => 'Encrypted',
-      2 => 'Peer Verified',
-      3 => 'Secret Confirmed',
-      _ => 'None',
-    };
+  1 => 'Encrypted',
+  2 => 'Peer Verified',
+  3 => 'Secret Confirmed',
+  _ => 'None',
+};
 
 String _peerIdentityType(int value) => switch (value) {
-      1 => 'Credential',
-      2 => 'Shared Node',
-      _ => 'Admin',
-    };
+  1 => 'Credential',
+  2 => 'Shared Node',
+  _ => 'Admin',
+};

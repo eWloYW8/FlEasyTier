@@ -79,16 +79,17 @@ class AppState extends ChangeNotifier {
     _manager.coreBinaryPath = canEditCoreBinaryPath
         ? _normalizeBinaryPath(settings['core_binary_path'] as String?)
         : null;
-    _themeMode = ThemeMode.values.elementAtOrNull(
-            settings['theme_mode'] as int? ?? 0) ??
+    _themeMode =
+        ThemeMode.values.elementAtOrNull(settings['theme_mode'] as int? ?? 0) ??
         ThemeMode.system;
     _seedColor = Color(settings['seed_color'] as int? ?? 0xFF00897B);
-    final savedSchemeVariant = DynamicSchemeVariant.values
-        .elementAtOrNull(settings['scheme_variant'] as int? ?? 2);
+    final savedSchemeVariant = DynamicSchemeVariant.values.elementAtOrNull(
+      settings['scheme_variant'] as int? ?? 2,
+    );
     _schemeVariant = _normalizeSchemeVariant(savedSchemeVariant);
     _closeToTray = settings['close_to_tray'] as bool? ?? false;
-    _logAutoClearSizeMb =
-        (settings['log_auto_clear_size_mb'] as int? ?? 10).clamp(0, 10240);
+    _logAutoClearSizeMb = (settings['log_auto_clear_size_mb'] as int? ?? 10)
+        .clamp(0, 10240);
 
     await _manager.init();
     _manager.onLog = addLog;
@@ -101,8 +102,7 @@ class AppState extends ChangeNotifier {
         AppLogLevel.info,
         'Auto-cleared ${clearedLogs.clearedFiles} oversized log file(s)',
         category: 'Logs',
-        detail:
-            '${clearedLogs.clearedBytes ~/ (1024 * 1024)} MB reclaimed',
+        detail: '${clearedLogs.clearedBytes ~/ (1024 * 1024)} MB reclaimed',
       );
     }
     await _manager.detectBinaries();
@@ -129,13 +129,16 @@ class AppState extends ChangeNotifier {
       _selectedConfigId = _configs.first.id;
     }
 
-    _pollTimer =
-        Timer.periodic(const Duration(seconds: 3), (_) => _pollStatus());
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _pollStatus(),
+    );
     await _pollStatus();
 
     if (_supportsSystemService) {
       for (final config in _configs.where(
-          (config) => config.autoStart && !config.serviceEnabled)) {
+        (config) => config.autoStart && !config.serviceEnabled,
+      )) {
         addLog(
           AppLogLevel.info,
           'Auto-start queued for ${config.displayName}',
@@ -154,8 +157,8 @@ class AppState extends ChangeNotifier {
       inst.errorMessage = exitCode == 0
           ? null
           : (detail?.trim().isNotEmpty == true
-              ? detail!.trim()
-              : 'Process exited with code $exitCode');
+                ? detail!.trim()
+                : 'Process exited with code $exitCode');
     }
     addLog(
       exitCode == 0 ? AppLogLevel.info : AppLogLevel.warning,
@@ -229,8 +232,9 @@ class AppState extends ChangeNotifier {
   }
 
   String exportAllConfigsJson() {
-    return const JsonEncoder.withIndent('  ')
-        .convert(_configs.map((c) => c.toJson()).toList());
+    return const JsonEncoder.withIndent(
+      '  ',
+    ).convert(_configs.map((c) => c.toJson()).toList());
   }
 
   String? importConfigJson(String json) {
@@ -306,12 +310,21 @@ class AppState extends ChangeNotifier {
   Future<String?> startInstance(String configId) async {
     final currentConfig = configById(configId);
     if (currentConfig == null) return 'Config not found';
-    final config = await _ensureRuntimeRpcPort(currentConfig, operation: 'start');
+    var config = await _ensureRuntimeRpcPort(currentConfig, operation: 'start');
     addLog(
       AppLogLevel.info,
       'Start requested for ${config.displayName}',
       category: 'Instance',
     );
+
+    if (Platform.isAndroid) {
+      if (config.instanceName.isEmpty) {
+        final runtimeConfig = config.copyWith(tomlData: config.tomlData);
+        runtimeConfig.instanceName = config.id;
+        config = runtimeConfig;
+      }
+      return _startAndroidInstance(config);
+    }
 
     final validationError = await _manager.validateLocalStart(config);
     if (validationError != null) {
@@ -379,41 +392,6 @@ class AppState extends ChangeNotifier {
       return null;
     }
 
-    if (PlatformVpn.needsSystemVpn) {
-      final granted = await PlatformVpn.prepareVpn();
-      if (!granted) {
-        addLog(
-          AppLogLevel.warning,
-          'VPN permission denied for ${config.displayName}',
-          category: 'VPN',
-        );
-        return 'VPN permission denied';
-      }
-
-      if (Platform.isAndroid) {
-        for (final other in _configs.where(
-          (item) => item.id != configId && (_instances[item.id]?.running ?? false),
-        )) {
-          addLog(
-            AppLogLevel.info,
-            'Android VPN only supports one active network, stopping ${other.displayName}',
-            category: 'VPN',
-          );
-          await stopInstance(other.id);
-        }
-      }
-
-      final ip =
-          config.virtualIpv4.isNotEmpty ? config.virtualIpv4 : '10.0.0.1';
-      await PlatformVpn.startVpn(
-        ipv4: ip.split('/').first,
-        cidr: 24,
-        mtu: config.mtu,
-        routes:
-            config.proxyCidrs.isNotEmpty ? config.proxyCidrs : ['0.0.0.0/0'],
-      );
-    }
-
     final err = await _manager.startInstance(config);
     if (err != null) {
       final inst = _instances.putIfAbsent(
@@ -423,7 +401,6 @@ class AppState extends ChangeNotifier {
       inst.running = false;
       inst.managedByService = false;
       inst.errorMessage = err;
-      if (PlatformVpn.needsSystemVpn) await PlatformVpn.stopVpn();
       notifyListeners();
       return err;
     }
@@ -459,6 +436,23 @@ class AppState extends ChangeNotifier {
       );
     }
 
+    if (Platform.isAndroid) {
+      await PlatformVpn.stopManagedNetwork();
+      if (inst != null) {
+        inst.running = false;
+        inst.errorMessage = null;
+      }
+      if (activeConfig != null) {
+        addLog(
+          AppLogLevel.info,
+          'Stopped ${activeConfig.displayName}',
+          category: 'VPN',
+        );
+      }
+      notifyListeners();
+      return;
+    }
+
     if (activeConfig != null &&
         _supportsSystemService &&
         inst?.managedByService == true) {
@@ -472,9 +466,6 @@ class AppState extends ChangeNotifier {
       await _manager.stopInstance(configId);
     }
 
-    if (PlatformVpn.needsSystemVpn) {
-      await PlatformVpn.stopVpn();
-    }
     if (inst != null) {
       inst.running = false;
       inst.errorMessage = null;
@@ -547,6 +538,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _pollStatus() async {
+    if (Platform.isAndroid) {
+      await _pollAndroidStatus();
+      return;
+    }
+
     bool changed = false;
 
     for (final config in _configs) {
@@ -567,7 +563,8 @@ class AppState extends ChangeNotifier {
         final inst = _instances[config.id];
 
         if (status == ManagedServiceStatus.running) {
-          final current = inst ??
+          final current =
+              inst ??
               (_instances[config.id] = NetworkInstance(configId: config.id));
           current.running = true;
           current.managedByService = true;
@@ -580,6 +577,117 @@ class AppState extends ChangeNotifier {
         }
       }
     }
+
+    if (changed) notifyListeners();
+  }
+
+  Future<String?> _startAndroidInstance(NetworkConfig config) async {
+    final granted = await PlatformVpn.prepareVpn();
+    if (!granted) {
+      addLog(
+        AppLogLevel.warning,
+        'VPN permission denied for ${config.displayName}',
+        category: 'VPN',
+      );
+      return 'VPN permission denied';
+    }
+
+    for (final other in _configs.where(
+      (item) => item.id != config.id && (_instances[item.id]?.running ?? false),
+    )) {
+      addLog(
+        AppLogLevel.info,
+        'Android VPN only supports one active network, stopping ${other.displayName}',
+        category: 'VPN',
+      );
+      await stopInstance(other.id);
+    }
+
+    final fallbackIpv4 = config.virtualIpv4.isNotEmpty
+        ? config.virtualIpv4
+        : '10.0.0.1/24';
+    final fallbackRoutes = config.proxyCidrs.isNotEmpty
+        ? config.proxyCidrs
+        : ['0.0.0.0/0'];
+
+    try {
+      await PlatformVpn.startManagedNetwork(
+        configId: config.id,
+        instanceName: config.instanceName,
+        configToml: config.toToml(),
+        fallbackIpv4: fallbackIpv4,
+        mtu: config.mtu,
+        routes: fallbackRoutes,
+      );
+    } catch (e) {
+      addLog(
+        AppLogLevel.error,
+        'Failed to start Android foreground service for ${config.displayName}',
+        category: 'VPN',
+        detail: e.toString(),
+      );
+      return e.toString();
+    }
+
+    _instances[config.id] = NetworkInstance(
+      configId: config.id,
+      running: true,
+      managedByService: false,
+      startTime: DateTime.now(),
+    );
+    notifyListeners();
+    return null;
+  }
+
+  Future<void> _pollAndroidStatus() async {
+    final status = await PlatformVpn.getManagedNetworkStatus();
+    final running = status['running'] == true;
+    final configId = status['configId'] as String?;
+    final instanceName = status['instanceName'] as String?;
+    final errorMessage = (status['errorMessage'] as String?)?.trim();
+    final infoJson = status['infoJson'] as String?;
+    var changed = false;
+
+    if (!running || configId == null) {
+      for (final config in _configs) {
+        final inst = _instances[config.id];
+        if (inst?.running == true) {
+          inst!.running = false;
+          if (config.id == configId && errorMessage?.isNotEmpty == true) {
+            inst.errorMessage = errorMessage;
+          }
+          changed = true;
+        }
+      }
+      if (changed) notifyListeners();
+      return;
+    }
+
+    for (final config in _configs.where((item) => item.id != configId)) {
+      final inst = _instances[config.id];
+      if (inst?.running == true) {
+        inst!.running = false;
+        inst.errorMessage = null;
+        changed = true;
+      }
+    }
+
+    final snapshot = _parseAndroidSnapshot(infoJson, instanceName);
+    final inst = _instances.putIfAbsent(
+      configId,
+      () => NetworkInstance(configId: configId),
+    );
+    inst.running = true;
+    inst.startTime ??= DateTime.now();
+    inst.managedByService = false;
+    inst.nodeInfo = snapshot?.$1;
+    inst.routes = snapshot?.$2 ?? const [];
+    inst.peerConns = snapshot?.$3 ?? const [];
+    inst.metrics = const [];
+    inst.errorMessage = errorMessage?.isNotEmpty == true
+        ? errorMessage
+        : snapshot?.$4;
+    changed = true;
 
     if (changed) notifyListeners();
   }
@@ -702,6 +810,136 @@ class AppState extends ChangeNotifier {
     return result.clearedFiles;
   }
 
+  (NodeInfo?, List<PeerRouteInfo>, List<PeerConnInfo>, String?)?
+  _parseAndroidSnapshot(String? infoJson, String? instanceName) {
+    if (infoJson == null || infoJson.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(infoJson);
+      if (decoded is! Map<String, dynamic>) return null;
+      final map = decoded['map'];
+      if (map is! Map) return null;
+
+      Map<String, dynamic>? entry;
+      if (instanceName != null && map[instanceName] is Map) {
+        entry = Map<String, dynamic>.from(map[instanceName] as Map);
+      } else if (map.isNotEmpty && map.values.first is Map) {
+        entry = Map<String, dynamic>.from(map.values.first as Map);
+      }
+      if (entry == null) return null;
+
+      final node = _parseAndroidNodeInfo(entry['my_node_info']);
+      final routes = _parseAndroidRoutes(entry['routes']);
+      final peers = _parseAndroidPeerConns(entry['peers']);
+      final error = (entry['error_msg'] as String?)?.trim();
+      return (node, routes, peers, error?.isNotEmpty == true ? error : null);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  NodeInfo? _parseAndroidNodeInfo(dynamic value) {
+    if (value is! Map) return null;
+    final map = Map<String, dynamic>.from(value);
+    final ipv4Cidr = _androidIpv4Inet(map['virtual_ipv4']);
+    final ips = map['ips'] is Map
+        ? Map<String, dynamic>.from(map['ips'] as Map)
+        : null;
+    final stun = map['stun_info'] is Map
+        ? Map<String, dynamic>.from(map['stun_info'] as Map)
+        : null;
+    return NodeInfo(
+      virtualIpv4Cidr: ipv4Cidr,
+      virtualIpv4: ipv4Cidr.split('/').first,
+      hostname: (map['hostname'] as String?) ?? '',
+      version: (map['version'] as String?) ?? '',
+      peerId: _androidInt(map['peer_id']),
+      listeners: {
+        ..._androidUrls(map['listeners']),
+        ..._androidUrls(ips?['listeners']),
+      }.toList(),
+      udpNatType: _androidNatType(stun?['udp_nat_type']),
+      tcpNatType: _androidNatType(stun?['tcp_nat_type']),
+      publicIps: [
+        if (_androidIpv4(ips?['public_ipv4']).isNotEmpty)
+          _androidIpv4(ips?['public_ipv4']),
+      ],
+      interfaceIpv4s: _androidIpv4List(ips?['interface_ipv4s']),
+      interfaceIpv6s: _androidIpv6List(ips?['interface_ipv6s']),
+      publicIpv6: _androidIpv6(ips?['public_ipv6']),
+      instId: _androidUuid(map['inst_id']),
+    );
+  }
+
+  List<PeerRouteInfo> _parseAndroidRoutes(dynamic value) {
+    if (value is! List) return const [];
+    return value.whereType<Map>().map((route) {
+      final map = Map<String, dynamic>.from(route);
+      final ipv4Cidr = _androidIpv4Inet(map['ipv4_addr']);
+      final ipv4Addr = ipv4Cidr.split('/').first;
+      return PeerRouteInfo(
+        peerId: _androidInt(map['peer_id']),
+        ipv4Addr: ipv4Addr,
+        ipv4Cidr: ipv4Cidr,
+        ipv6Addr: _androidIpv6Inet(map['ipv6_addr']),
+        hostname: (map['hostname'] as String?) ?? '',
+        nextHopPeerId: _androidInt(map['next_hop_peer_id']),
+        cost: _androidInt(map['cost']),
+        latencyMs: _androidDouble(map['path_latency']),
+        proxyCidrs: _androidStringList(map['proxy_cidrs']),
+        udpNatType: _androidNatType(map['udp_nat_type']),
+        tcpNatType: _androidNatType(map['tcp_nat_type']),
+        version: (map['easytier_version'] as String?) ?? '',
+        instId: _androidUuid(map['inst_id']),
+      );
+    }).toList();
+  }
+
+  List<PeerConnInfo> _parseAndroidPeerConns(dynamic value) {
+    if (value is! List) return const [];
+    final conns = <PeerConnInfo>[];
+    for (final peer in value.whereType<Map>()) {
+      final peerMap = Map<String, dynamic>.from(peer);
+      final defaultConnId = _androidUuid(peerMap['default_conn_id']);
+      final peerIdHint = _androidInt(peerMap['peer_id']);
+      final peerConns = peerMap['conns'];
+      if (peerConns is! List) continue;
+      for (final conn in peerConns.whereType<Map>()) {
+        final map = Map<String, dynamic>.from(conn);
+        final stats = map['stats'] is Map
+            ? Map<String, dynamic>.from(map['stats'] as Map)
+            : null;
+        final tunnel = map['tunnel'] is Map
+            ? Map<String, dynamic>.from(map['tunnel'] as Map)
+            : null;
+        final connId = _androidUuid(map['conn_id']);
+        conns.add(
+          PeerConnInfo(
+            peerId: _androidInt(map['peer_id'], fallback: peerIdHint),
+            myPeerId: _androidInt(map['my_peer_id']),
+            connId: connId,
+            tunnelType: (tunnel?['tunnel_type'] as String?) ?? '',
+            localAddr: _androidUrl(tunnel?['local_addr']),
+            remoteAddr: _androidUrl(tunnel?['remote_addr']),
+            rxBytes: _androidInt(stats?['rx_bytes']),
+            txBytes: _androidInt(stats?['tx_bytes']),
+            rxPackets: _androidInt(stats?['rx_packets']),
+            txPackets: _androidInt(stats?['tx_packets']),
+            latencyMs: _androidDouble(stats?['latency_us']) / 1000.0,
+            lossRate: _androidDouble(map['loss_rate']),
+            features: _androidStringList(map['features']),
+            networkName: (map['network_name'] as String?) ?? '',
+            isClient: map['is_client'] == true,
+            isClosed: map['is_closed'] == true,
+            isDefault: defaultConnId.isNotEmpty && defaultConnId == connId,
+            secureAuthLevel: _androidSecureAuth(map['secure_auth_level']),
+            peerIdentityType: _androidPeerIdentity(map['peer_identity_type']),
+          ),
+        );
+      }
+    }
+    return conns;
+  }
+
   void addLog(
     AppLogLevel level,
     String message, {
@@ -727,11 +965,7 @@ class AppState extends ChangeNotifier {
 
   void clearAppLogs() {
     _appLogs.clear();
-    addLog(
-      AppLogLevel.info,
-      'Cleared application logs',
-      category: 'Logs',
-    );
+    addLog(AppLogLevel.info, 'Cleared application logs', category: 'Logs');
   }
 
   String exportAppLogsText() {
@@ -741,13 +975,144 @@ class AppState extends ChangeNotifier {
   Future<void> _saveConfigs() => _storage.saveConfigs(_configs);
 
   Future<void> _saveSettings() => _storage.saveSettings({
-        'core_binary_path': _manager.coreBinaryPath,
-        'theme_mode': _themeMode.index,
-        'seed_color': _seedColor.toARGB32(),
-        'scheme_variant': _schemeVariant.index,
-        'close_to_tray': _closeToTray,
-        'log_auto_clear_size_mb': _logAutoClearSizeMb,
-      });
+    'core_binary_path': _manager.coreBinaryPath,
+    'theme_mode': _themeMode.index,
+    'seed_color': _seedColor.toARGB32(),
+    'scheme_variant': _schemeVariant.index,
+    'close_to_tray': _closeToTray,
+    'log_auto_clear_size_mb': _logAutoClearSizeMb,
+  });
+
+  int _androidInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  double _androidDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _androidIpv4(dynamic value) {
+    if (value is! Map) return '';
+    final map = Map<String, dynamic>.from(value);
+    final raw = map['addr'];
+    final addr = raw is int
+        ? raw.toUnsigned(32)
+        : int.tryParse(raw?.toString() ?? '') ?? 0;
+    if (addr == 0) return '';
+    return '${(addr >> 24) & 0xFF}.${(addr >> 16) & 0xFF}.${(addr >> 8) & 0xFF}.${addr & 0xFF}';
+  }
+
+  String _androidIpv4Inet(dynamic value) {
+    if (value is! Map) return '';
+    final map = Map<String, dynamic>.from(value);
+    final ipv4 = _androidIpv4(map['address']);
+    final cidr = _androidInt(map['network_length'], fallback: 24);
+    if (ipv4.isEmpty) return '';
+    return '$ipv4/$cidr';
+  }
+
+  String _androidIpv6(dynamic value) {
+    if (value is! Map) return '';
+    final map = Map<String, dynamic>.from(value);
+    final parts = [
+      _androidInt(map['part1']),
+      _androidInt(map['part2']),
+      _androidInt(map['part3']),
+      _androidInt(map['part4']),
+    ];
+    if (parts.every((part) => part == 0)) return '';
+    String group(int val, int shift) =>
+        ((val >> shift) & 0xFFFF).toRadixString(16);
+    return '${group(parts[0], 16)}:${group(parts[0], 0)}:${group(parts[1], 16)}:${group(parts[1], 0)}:${group(parts[2], 16)}:${group(parts[2], 0)}:${group(parts[3], 16)}:${group(parts[3], 0)}';
+  }
+
+  String _androidIpv6Inet(dynamic value) {
+    if (value is! Map) return '';
+    final map = Map<String, dynamic>.from(value);
+    final ipv6 = _androidIpv6(map['address']);
+    final cidr = _androidInt(map['network_length']);
+    if (ipv6.isEmpty) return '';
+    return cidr > 0 ? '$ipv6/$cidr' : ipv6;
+  }
+
+  List<String> _androidIpv4List(dynamic value) {
+    if (value is! List) return const [];
+    return value.map(_androidIpv4).where((item) => item.isNotEmpty).toList();
+  }
+
+  List<String> _androidIpv6List(dynamic value) {
+    if (value is! List) return const [];
+    return value.map(_androidIpv6).where((item) => item.isNotEmpty).toList();
+  }
+
+  List<String> _androidUrls(dynamic value) {
+    if (value is! List) return const [];
+    return value.map(_androidUrl).where((item) => item.isNotEmpty).toList();
+  }
+
+  String _androidUrl(dynamic value) {
+    if (value is! Map) return '';
+    return (Map<String, dynamic>.from(value)['url'] as String?) ?? '';
+  }
+
+  List<String> _androidStringList(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .map((item) => item.toString())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  String _androidUuid(dynamic value) {
+    if (value is String) return value;
+    if (value is! Map) return '';
+    final map = Map<String, dynamic>.from(value);
+    final p1 = _androidInt(
+      map['part1'],
+    ).toUnsigned(32).toRadixString(16).padLeft(8, '0');
+    final p2 = _androidInt(
+      map['part2'],
+    ).toUnsigned(32).toRadixString(16).padLeft(8, '0');
+    final p3 = _androidInt(
+      map['part3'],
+    ).toUnsigned(32).toRadixString(16).padLeft(8, '0');
+    final p4 = _androidInt(
+      map['part4'],
+    ).toUnsigned(32).toRadixString(16).padLeft(8, '0');
+    final hex = '$p1$p2$p3$p4';
+    if (hex.length != 32) return '';
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}';
+  }
+
+  String _androidNatType(dynamic value) => switch (_androidInt(value)) {
+    1 => 'Open Internet',
+    2 => 'No PAT',
+    3 => 'Full Cone',
+    4 => 'Restricted',
+    5 => 'Port Restricted',
+    6 => 'Symmetric',
+    7 => 'Sym UDP Firewall',
+    8 => 'Sym Easy Inc',
+    9 => 'Sym Easy Dec',
+    _ => 'Unknown',
+  };
+
+  String _androidSecureAuth(dynamic value) => switch (_androidInt(value)) {
+    1 => 'Encrypted',
+    2 => 'Peer Verified',
+    3 => 'Secret Confirmed',
+    _ => 'None',
+  };
+
+  String _androidPeerIdentity(dynamic value) => switch (_androidInt(value)) {
+    1 => 'Credential',
+    2 => 'Shared Node',
+    _ => 'Admin',
+  };
 
   String? _normalizeBinaryPath(String? path) {
     var value = path?.trim() ?? '';
