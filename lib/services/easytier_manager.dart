@@ -28,6 +28,7 @@ class EasyTierManager {
   final Map<String, List<String>> _processLogs = {};
   final Map<String, EasyTierApi> _rpcClients = {};
   final Set<String> _privilegedProcesses = {};
+  final Map<String, _FileLogCache> _fileLogCaches = {};
   final PrivilegedSession _privilegedSession = PrivilegedSession();
 
   void Function(String configId, int exitCode, String? detail)? onInstanceStopped;
@@ -279,10 +280,12 @@ class EasyTierManager {
     }
 
     final logFile = _serviceLogFileFor(configId, config: config);
-    if (!logFile.existsSync()) return const [];
-
     try {
-      return _readLogTail(logFile);
+      final cache = _fileLogCaches.putIfAbsent(
+        configId,
+        () => _FileLogCache(logFile.path),
+      );
+      return cache.refresh();
     } catch (_) {
       return const [];
     }
@@ -1585,51 +1588,6 @@ class EasyTierManager {
     );
   }
 
-  List<String> _readLogTail(
-    File logFile, {
-    int maxLines = 500,
-    int maxBytes = 256 * 1024,
-  }) {
-    final raf = logFile.openSync(mode: FileMode.read);
-    try {
-      final length = raf.lengthSync();
-      if (length <= 0) return const [];
-
-      final readBytes = length < maxBytes ? length : maxBytes;
-      raf.setPositionSync(length - readBytes);
-      final bytes = raf.readSync(readBytes);
-      final start = _safeUtf8TailStart(bytes, truncated: length > readBytes);
-      final text = utf8.decode(bytes.sublist(start), allowMalformed: false);
-      final lines = const LineSplitter().convert(text);
-
-      if (lines.isEmpty) return const [];
-
-      if (lines.length <= maxLines) return lines;
-      return lines.sublist(lines.length - maxLines);
-    } finally {
-      raf.closeSync();
-    }
-  }
-
-  int _safeUtf8TailStart(List<int> bytes, {required bool truncated}) {
-    if (bytes.isEmpty) return 0;
-
-    if (truncated) {
-      for (var i = 0; i < bytes.length; i++) {
-        if (bytes[i] == 0x0A) {
-          final next = i + 1;
-          return next < bytes.length ? next : bytes.length;
-        }
-      }
-    }
-
-    var start = 0;
-    while (start < bytes.length && (bytes[start] & 0xC0) == 0x80) {
-      start += 1;
-    }
-    return start;
-  }
-
   String? _buildExitDetail(String configId, int exitCode) {
     if (exitCode == 0) return null;
 
@@ -1696,4 +1654,98 @@ enum ServiceBackend {
   openrc,
   launchd,
   unsupported,
+}
+
+/// Incrementally reads a log file, caching lines and tracking the last
+/// read position so each poll only reads newly appended bytes.
+class _FileLogCache {
+  _FileLogCache(this.path);
+
+  final String path;
+  final List<String> lines = [];
+  int _lastOffset = 0;
+  int _lastModifiedMs = 0;
+
+  static const _maxLines = 500;
+  static const _initialMaxBytes = 256 * 1024;
+
+  /// Refresh the cache, reading only new bytes since the last call.
+  /// Returns [lines] (the same list instance, mutated in place).
+  List<String> refresh() {
+    final file = File(path);
+    if (!file.existsSync()) return lines;
+
+    final stat = file.statSync();
+    final modifiedMs = stat.modified.millisecondsSinceEpoch;
+    final length = stat.size;
+
+    // File unchanged since last read — skip I/O entirely.
+    if (modifiedMs == _lastModifiedMs && length == _lastOffset) return lines;
+
+    // File was truncated / rotated — reset and do a full tail read.
+    if (length < _lastOffset) {
+      lines.clear();
+      _lastOffset = 0;
+    }
+
+    _lastModifiedMs = modifiedMs;
+
+    final raf = file.openSync(mode: FileMode.read);
+    try {
+      if (_lastOffset == 0) {
+        // First read: grab the tail of the file.
+        final readBytes = length < _initialMaxBytes ? length : _initialMaxBytes;
+        raf.setPositionSync(length - readBytes);
+        final bytes = raf.readSync(readBytes);
+        final start =
+            _safeUtf8Start(bytes, truncated: length > _initialMaxBytes);
+        final text = utf8.decode(bytes.sublist(start), allowMalformed: true);
+        lines.addAll(const LineSplitter().convert(text));
+      } else if (length > _lastOffset) {
+        // Incremental read: only new bytes.
+        raf.setPositionSync(_lastOffset);
+        final bytes = raf.readSync(length - _lastOffset);
+        final text = utf8.decode(bytes, allowMalformed: true);
+        final newLines = const LineSplitter().convert(text);
+        // The first "line" may be a continuation of the last cached line.
+        if (newLines.isNotEmpty && lines.isNotEmpty && _lastIncomplete) {
+          lines.last = lines.last + newLines.first;
+          lines.addAll(newLines.skip(1));
+        } else {
+          lines.addAll(newLines);
+        }
+      }
+
+      _lastOffset = length;
+
+      // Trim to max.
+      if (lines.length > _maxLines) {
+        lines.removeRange(0, lines.length - _maxLines);
+      }
+    } finally {
+      raf.closeSync();
+    }
+
+    return lines;
+  }
+
+  // Whether the previous read ended without a trailing newline.
+  bool get _lastIncomplete => _lastOffset > 0;
+
+  static int _safeUtf8Start(List<int> bytes, {required bool truncated}) {
+    if (bytes.isEmpty) return 0;
+    if (truncated) {
+      for (var i = 0; i < bytes.length; i++) {
+        if (bytes[i] == 0x0A) {
+          final next = i + 1;
+          return next < bytes.length ? next : bytes.length;
+        }
+      }
+    }
+    var start = 0;
+    while (start < bytes.length && (bytes[start] & 0xC0) == 0x80) {
+      start += 1;
+    }
+    return start;
+  }
 }
