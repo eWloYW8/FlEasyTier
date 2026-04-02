@@ -143,6 +143,18 @@ class _MainShellState extends State<_MainShell>
   }
 
   @override
+  void onWindowFocus() {
+    // macOS Dock reactivation shows the window natively, bypassing
+    // window_manager plugin state. Re-assert preventClose so close
+    // events are intercepted, and reset _isClosing in case a previous
+    // quit attempt didn't fully terminate the process.
+    if (_isDesktop && _isClosing) {
+      _isClosing = false;
+      windowManager.setPreventClose(true);
+    }
+  }
+
+  @override
   void onWindowRestore() {
     _syncWindowState();
   }
