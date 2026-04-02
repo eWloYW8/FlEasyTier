@@ -654,6 +654,14 @@ class AppState extends ChangeNotifier {
         if (inst?.running == true) {
           inst!.running = false;
           if (config.id == configId && errorMessage?.isNotEmpty == true) {
+            if (inst.errorMessage != errorMessage) {
+              addLog(
+                AppLogLevel.error,
+                'Android managed network failed for ${config.displayName}',
+                category: 'VPN',
+                detail: errorMessage,
+              );
+            }
             inst.errorMessage = errorMessage;
           }
           changed = true;
@@ -684,9 +692,21 @@ class AppState extends ChangeNotifier {
     inst.routes = snapshot?.$2 ?? const [];
     inst.peerConns = snapshot?.$3 ?? const [];
     inst.metrics = const [];
-    inst.errorMessage = errorMessage?.isNotEmpty == true
+    final nextError = errorMessage?.isNotEmpty == true
         ? errorMessage
         : snapshot?.$4;
+    if (nextError != null &&
+        nextError.isNotEmpty &&
+        inst.errorMessage != nextError) {
+      final config = configById(configId);
+      addLog(
+        AppLogLevel.error,
+        'Android managed network reported an error for ${config?.displayName ?? configId}',
+        category: 'VPN',
+        detail: nextError,
+      );
+    }
+    inst.errorMessage = nextError;
     changed = true;
 
     if (changed) notifyListeners();

@@ -202,7 +202,9 @@ class EasyTierVpnService : VpnService() {
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
         } catch (t: Throwable) {
-            lastErrorMessage = t.message ?: t.toString()
+            val typeName = t::class.java.name
+            val detail = t.message?.takeIf { it.isNotBlank() } ?: t.toString()
+            lastErrorMessage = "$typeName: $detail"
             networkRunning = false
             updateNotification("FlEasyTier", "Network stopped: ${lastErrorMessage ?: "error"}")
         } finally {

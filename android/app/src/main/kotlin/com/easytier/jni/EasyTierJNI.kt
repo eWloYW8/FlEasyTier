@@ -3,6 +3,7 @@ package com.easytier.jni
 object EasyTierJNI {
 
     init {
+        System.loadLibrary("easytier_ffi")
         System.loadLibrary("easytier_android_jni")
     }
 
