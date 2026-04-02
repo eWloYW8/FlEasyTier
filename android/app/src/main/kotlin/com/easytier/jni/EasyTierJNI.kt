@@ -2,9 +2,31 @@ package com.easytier.jni
 
 object EasyTierJNI {
 
-    init {
-        System.loadLibrary("easytier_ffi")
-        System.loadLibrary("easytier_android_jni")
+    @Volatile
+    private var librariesLoaded = false
+
+    @Volatile
+    private var loadError: Throwable? = null
+
+    @JvmStatic
+    fun ensureLoaded() {
+        if (librariesLoaded) {
+            return
+        }
+        synchronized(this) {
+            if (librariesLoaded) {
+                return
+            }
+            loadError?.let { throw it }
+            try {
+                System.loadLibrary("easytier_ffi")
+                System.loadLibrary("easytier_android_jni")
+                librariesLoaded = true
+            } catch (t: Throwable) {
+                loadError = t
+                throw t
+            }
+        }
     }
 
     @JvmStatic external fun setTunFd(instanceName: String, fd: Int): Int
@@ -15,7 +37,7 @@ object EasyTierJNI {
 
     @JvmStatic external fun retainNetworkInstance(instanceNames: Array<String>?): Int
 
-    @JvmStatic external fun collectNetworkInfos(maxLength: Int): String?
+    @JvmStatic external fun collectNetworkInfos(): String?
 
     @JvmStatic external fun getLastError(): String?
 

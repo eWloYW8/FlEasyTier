@@ -606,9 +606,10 @@ class AppState extends ChangeNotifier {
     final fallbackIpv4 = config.virtualIpv4.isNotEmpty
         ? config.virtualIpv4
         : '10.0.0.1/24';
-    final fallbackRoutes = config.proxyCidrs.isNotEmpty
-        ? config.proxyCidrs
-        : ['0.0.0.0/0'];
+    final fallbackRoutes = [
+      ...config.manualRoutes,
+      ...config.proxyCidrs,
+    ].toSet().toList();
 
     try {
       await PlatformVpn.startManagedNetwork(
@@ -644,9 +645,18 @@ class AppState extends ChangeNotifier {
     final running = status['running'] == true;
     final configId = status['configId'] as String?;
     final instanceName = status['instanceName'] as String?;
-    final errorMessage = (status['errorMessage'] as String?)?.trim();
+    final errorMessage = _normalizeAndroidError(status['errorMessage']);
     final infoJson = status['infoJson'] as String?;
+    final logs = (status['logs'] as List?)
+            ?.map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList() ??
+        const <String>[];
     var changed = false;
+
+    if (configId != null && logs.isNotEmpty) {
+      manager.setManagedLogs(configId, logs);
+    }
 
     if (!running || configId == null) {
       for (final config in _configs) {
@@ -850,7 +860,7 @@ class AppState extends ChangeNotifier {
       final node = _parseAndroidNodeInfo(entry['my_node_info']);
       final routes = _parseAndroidRoutes(entry['routes']);
       final peers = _parseAndroidPeerConns(entry['peers']);
-      final error = (entry['error_msg'] as String?)?.trim();
+      final error = _normalizeAndroidError(entry['error_msg']);
       return (node, routes, peers, error?.isNotEmpty == true ? error : null);
     } catch (_) {
       return null;
@@ -1133,6 +1143,14 @@ class AppState extends ChangeNotifier {
     2 => 'Shared Node',
     _ => 'Admin',
   };
+
+  String? _normalizeAndroidError(dynamic value) {
+    final normalized = value?.toString().trim();
+    if (normalized == null || normalized.isEmpty) return null;
+    if (normalized.toLowerCase() == 'null') return null;
+    if (normalized.toLowerCase() == 'undefined') return null;
+    return normalized;
+  }
 
   String? _normalizeBinaryPath(String? path) {
     var value = path?.trim() ?? '';

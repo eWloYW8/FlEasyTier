@@ -44,7 +44,14 @@ try {
     Write-Host "Building easytier-ffi for $androidTarget ($rustTarget)"
     cargo ndk -t $androidTarget build --release --manifest-path (Join-Path $easyTierRoot 'easytier-contrib/easytier-ffi/Cargo.toml')
     Write-Host "Building easytier-android-jni for $androidTarget ($rustTarget)"
-    cargo ndk -t $androidTarget build --release --manifest-path (Join-Path $jniRoot 'Cargo.toml')
+    $nativeLibDir = Join-Path $easyTierRoot "target/$rustTarget/release"
+    $oldRustFlags = $env:RUSTFLAGS
+    $env:RUSTFLAGS = (($oldRustFlags, "-L native=$nativeLibDir", "-l dylib=easytier_ffi") | Where-Object { $_ -and $_.Trim() }) -join ' '
+    try {
+      cargo ndk -t $androidTarget build --release --manifest-path (Join-Path $jniRoot 'Cargo.toml')
+    } finally {
+      $env:RUSTFLAGS = $oldRustFlags
+    }
 
     $jniLib = Join-Path $easyTierRoot "target/$rustTarget/release/libeasytier_android_jni.so"
     $ffiLib = Join-Path $easyTierRoot "target/$rustTarget/release/libeasytier_ffi.so"

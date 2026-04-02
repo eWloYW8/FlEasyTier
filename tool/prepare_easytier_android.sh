@@ -42,7 +42,9 @@ for android_target in "${ANDROID_TARGETS[@]}"; do
   echo "Building easytier-ffi for ${android_target} (${rust_target})"
   cargo ndk -t "${android_target}" build --release --manifest-path "${EASYTIER_ROOT}/easytier-contrib/easytier-ffi/Cargo.toml"
   echo "Building easytier-android-jni for ${android_target} (${rust_target})"
-  cargo ndk -t "${android_target}" build --release --manifest-path "${JNI_ROOT}/Cargo.toml"
+  native_lib_dir="${EASYTIER_ROOT}/target/${rust_target}/release"
+  RUSTFLAGS="${RUSTFLAGS:-} -L native=${native_lib_dir} -l dylib=easytier_ffi" \
+    cargo ndk -t "${android_target}" build --release --manifest-path "${JNI_ROOT}/Cargo.toml"
 
   jni_lib="${EASYTIER_ROOT}/target/${rust_target}/release/libeasytier_android_jni.so"
   ffi_lib="${EASYTIER_ROOT}/target/${rust_target}/release/libeasytier_ffi.so"

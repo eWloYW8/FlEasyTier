@@ -30,7 +30,7 @@ class MainActivity : FlutterActivity() {
                         val configToml = call.argument<String>("configToml")
                         val fallbackIpv4 = call.argument<String>("fallbackIpv4") ?: "10.0.0.1/24"
                         val mtu = call.argument<Int>("mtu") ?: 1300
-                        val routes = call.argument<List<String>>("routes") ?: listOf("0.0.0.0/0")
+                        val routes = call.argument<List<String>>("routes") ?: emptyList()
                         val dns = call.argument<String>("dns")
                         if (configId.isNullOrBlank() || instanceName.isNullOrBlank() || configToml.isNullOrBlank()) {
                             result.error("invalid_args", "configId, instanceName and configToml are required", null)

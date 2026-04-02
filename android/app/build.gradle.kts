@@ -2,6 +2,9 @@ import java.io.File
 import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+val repoRoot = rootProject.layout.projectDirectory.dir("..").asFile
+val easyTierRoot = File(repoRoot, "third_party/EasyTier")
+
 val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH")
 val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
@@ -14,20 +17,20 @@ val hasReleaseSigning = listOf(
 ).all { !it.isNullOrBlank() }
 
 fun readEasyTierAndroidVersion(): String {
-    val cargoToml = file("../third_party/EasyTier/easytier/Cargo.toml")
+    val cargoToml = File(easyTierRoot, "easytier/Cargo.toml")
     val content = cargoToml.readText()
     val match = Regex("""(?m)^version\s*=\s*"([^"]+)"""").find(content)
     return match?.groupValues?.getOrNull(1) ?: "unknown"
 }
 
 fun readEasyTierAndroidCommit(): String {
-    val gitHead = file("../third_party/EasyTier/.git")
+    val gitHead = File(easyTierRoot, ".git")
     if (!gitHead.exists()) {
         return "unknown"
     }
     return try {
         val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
-            .directory(file("../third_party/EasyTier"))
+            .directory(easyTierRoot)
             .redirectErrorStream(true)
             .start()
         val output = process.inputStream.bufferedReader().use { it.readText().trim() }
@@ -55,6 +58,10 @@ android {
     namespace = "com.ewloyw8.fleasytier"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    buildFeatures {
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -115,7 +122,6 @@ val prepareAndroidJniLibraries by tasks.registering(Exec::class) {
     group = "build"
     description = "Cross-compiles EasyTier Android JNI/FFI libraries and embeds them into jniLibs."
 
-    val repoRoot = rootProject.layout.projectDirectory.dir("..").asFile
     val script = if (OperatingSystem.current().isWindows) {
         File(repoRoot, "tool/prepare_easytier_android.ps1")
     } else {
@@ -123,7 +129,7 @@ val prepareAndroidJniLibraries by tasks.registering(Exec::class) {
     }
 
     workingDir = repoRoot
-    inputs.dir(File(repoRoot, "third_party/EasyTier"))
+    inputs.dir(easyTierRoot)
     outputs.dir(layout.projectDirectory.dir("src/main/jniLibs"))
 
     if (OperatingSystem.current().isWindows) {

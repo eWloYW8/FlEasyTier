@@ -34,7 +34,7 @@ class PlatformVpn {
     required String configToml,
     required String fallbackIpv4,
     int mtu = 1300,
-    List<String> routes = const ['0.0.0.0/0'],
+    List<String> routes = const [],
     String? dns,
   }) async {
     if (!Platform.isAndroid) return;

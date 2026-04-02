@@ -664,6 +664,24 @@ class _LogsTabState extends State<_LogsTab> {
               ),
               const SizedBox(width: 8),
               IconButton(
+                icon: Icon(Icons.copy_all_outlined, size: 20, color: cs.outline),
+                tooltip: 'Copy Logs',
+                onPressed: logs.isEmpty
+                    ? null
+                    : () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: logs.join('\n')),
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Logs copied'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+              ),
+              IconButton(
                 icon: Icon(
                   _autoScroll
                       ? Icons.vertical_align_bottom

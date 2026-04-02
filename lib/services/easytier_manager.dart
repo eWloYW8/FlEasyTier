@@ -28,6 +28,7 @@ class EasyTierManager {
   final Map<String, Process> _processes = {};
   final Map<String, StreamSubscription<int>> _exitSubs = {};
   final Map<String, List<String>> _processLogs = {};
+  final Map<String, List<String>> _androidManagedLogs = {};
   final Map<String, EasyTierApi> _rpcClients = {};
   final Set<String> _privilegedProcesses = {};
   final Map<String, _FileLogCache> _fileLogCaches = {};
@@ -298,6 +299,11 @@ class EasyTierManager {
   }
 
   List<String> getLogs(String configId, {NetworkConfig? config}) {
+    final androidLogs = _androidManagedLogs[configId];
+    if (androidLogs != null && androidLogs.isNotEmpty) {
+      return androidLogs;
+    }
+
     final processLogs = _processLogs[configId];
     if (processLogs != null && processLogs.isNotEmpty) {
       return processLogs;
@@ -313,6 +319,18 @@ class EasyTierManager {
     } catch (_) {
       return const [];
     }
+  }
+
+  void setManagedLogs(String configId, List<String> logs) {
+    _androidManagedLogs[configId] = List<String>.from(logs);
+  }
+
+  void clearManagedLogs([String? configId]) {
+    if (configId == null) {
+      _androidManagedLogs.clear();
+      return;
+    }
+    _androidManagedLogs.remove(configId);
   }
 
   Future<LogCleanupResult> clearAllLocalLogs(List<NetworkConfig> configs) {
