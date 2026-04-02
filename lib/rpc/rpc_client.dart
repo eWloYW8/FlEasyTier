@@ -49,26 +49,33 @@ class RpcClient {
 
   Future<void> connect() async {
     if (_connected) return;
-    _socket = await Socket.connect(host, port,
+    final socket = await Socket.connect(host, port,
         timeout: const Duration(seconds: 5));
+    _socket = socket;
     _connected = true;
     _recvBuf.clear();
     _recvLen = 0;
 
-    _socket!.listen(
+    socket.listen(
       _onData,
       onError: (e) => _disconnect('Socket error: $e'),
       onDone: () => _disconnect('Connection closed by peer'),
       cancelOnError: false,
     );
+
+    // Swallow write-side errors — read-side onError already triggers _disconnect.
+    // Without this, SocketException becomes an unhandled async error.
+    socket.done.catchError((_) {});
   }
 
   void _disconnect(String reason) {
+    if (!_connected && _socket == null) return; // already disconnected
     _connected = false;
-    _socket?.destroy();
+    final socket = _socket;
     _socket = null;
     _recvBuf.clear();
     _recvLen = 0;
+    socket?.destroy();
 
     // Fail all pending requests
     for (final c in _pending.values) {
