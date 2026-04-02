@@ -590,12 +590,15 @@ class _LogsTab extends StatefulWidget {
 
 class _LogsTabState extends State<_LogsTab> {
   final _scrollController = ScrollController();
+  final _filterController = TextEditingController();
   String _filter = '';
   bool _autoScroll = true;
+  int _prevLogCount = 0;
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _filterController.dispose();
     super.dispose();
   }
 
@@ -613,8 +616,8 @@ class _LogsTabState extends State<_LogsTab> {
                 stripAnsi(l).toLowerCase().contains(_filter.toLowerCase()))
             .toList();
 
-    // Auto-scroll after frame
-    if (_autoScroll && logs.isNotEmpty) {
+    // Only scroll when new lines actually appeared, not on every rebuild.
+    if (_autoScroll && logs.length > _prevLogCount && logs.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController
@@ -622,127 +625,138 @@ class _LogsTabState extends State<_LogsTab> {
         }
       });
     }
+    _prevLogCount = logs.length;
 
     return Column(
       children: [
         // Toolbar
-        Container(
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerLow,
-            border: Border(
-              bottom: BorderSide(
-                  color: cs.outlineVariant.withValues(alpha: 0.4)),
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
           child: Row(
             children: [
-              Icon(Icons.terminal, size: 14, color: cs.outline),
-              const SizedBox(width: 6),
-              Text('Terminal',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: cs.outline,
-                      fontFamily: 'monospace')),
-              const Spacer(),
-              SizedBox(
-                width: 200,
-                height: 28,
+              Expanded(
                 child: TextField(
+                  controller: _filterController,
                   style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       color: cs.onSurface,
                       fontFamily: 'monospace'),
                   decoration: InputDecoration(
-                    hintText: 'Filter...',
-                    hintStyle: TextStyle(color: cs.outline, fontSize: 11),
+                    hintText: 'Filter logs...',
                     prefixIcon:
-                        Icon(Icons.search, size: 14, color: cs.outline),
-                    prefixIconConstraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 0),
-                    filled: true,
-                    fillColor: cs.surfaceContainerLowest,
+                        Icon(Icons.search, size: 18, color: cs.outline),
+                    suffixIcon: _filter.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.close, size: 16, color: cs.outline),
+                            onPressed: () {
+                              _filterController.clear();
+                              setState(() => _filter = '');
+                            },
+                          )
+                        : null,
+                    border: const OutlineInputBorder(),
                     isDense: true,
                     contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                      borderSide: BorderSide(color: cs.outlineVariant),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                      borderSide: BorderSide(color: cs.outlineVariant),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                      borderSide: BorderSide(color: cs.outline),
-                    ),
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
                   onChanged: (v) => setState(() => _filter = v),
                 ),
               ),
-              const SizedBox(width: 4),
-              Tooltip(
-                message:
-                    _autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF',
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(4),
-                  onTap: () => setState(() => _autoScroll = !_autoScroll),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      _autoScroll
-                          ? Icons.vertical_align_bottom
-                          : Icons.vertical_align_top,
-                      size: 16,
-                      color: _autoScroll ? cs.primary : cs.outline,
-                    ),
-                  ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: Icon(
+                  _autoScroll
+                      ? Icons.vertical_align_bottom
+                      : Icons.vertical_align_top,
+                  size: 20,
                 ),
+                tooltip: _autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF',
+                onPressed: () => setState(() => _autoScroll = !_autoScroll),
+                color: _autoScroll ? cs.primary : cs.outline,
               ),
-              const SizedBox(width: 4),
               Text('${logs.length}',
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: cs.outline,
-                      fontFamily: 'monospace')),
+                  style: TextStyle(fontSize: 11, color: cs.outline)),
             ],
           ),
         ),
         // Log content
         Expanded(
-          child: Container(
-            color: cs.surfaceContainerLowest,
-            child: logs.isEmpty
-                ? const SizedBox.shrink()
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                    itemCount: logs.length,
-                    itemBuilder: (_, i) {
-                      final line = logs[i];
-                      final isErr = line.startsWith('[ERR]');
-                      final spans = parseAnsi(
-                        line,
-                        defaultColor:
-                            isErr ? cs.error : cs.onSurfaceVariant,
-                      );
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 0.5),
-                        child: SelectableText.rich(
-                          TextSpan(children: spans),
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11.5,
-                            height: 1.45,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
+          child: logs.isEmpty
+              ? const SizedBox.shrink()
+              : _LogListView(
+                  controller: _scrollController,
+                  logs: logs,
+                  errorColor: cs.error,
+                  defaultColor: cs.onSurfaceVariant,
+                ),
         ),
       ],
+    );
+  }
+}
+
+/// Extracted log list so Flutter can skip rebuilding it when only
+/// toolbar state (filter text, auto-scroll) changes and the log
+/// content is identical.
+class _LogListView extends StatelessWidget {
+  const _LogListView({
+    required this.controller,
+    required this.logs,
+    required this.errorColor,
+    required this.defaultColor,
+  });
+
+  final ScrollController controller;
+  final List<String> logs;
+  final Color errorColor;
+  final Color defaultColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      controller: controller,
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      itemCount: logs.length,
+      itemBuilder: (_, i) => _LogLine(
+        key: ValueKey(i),
+        line: logs[i],
+        errorColor: errorColor,
+        defaultColor: defaultColor,
+      ),
+    );
+  }
+}
+
+/// A single log line that only rebuilds when its [line] content changes.
+class _LogLine extends StatelessWidget {
+  const _LogLine({
+    super.key,
+    required this.line,
+    required this.errorColor,
+    required this.defaultColor,
+  });
+
+  final String line;
+  final Color errorColor;
+  final Color defaultColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final isErr = line.startsWith('[ERR]');
+    final spans = parseAnsi(
+      line,
+      defaultColor: isErr ? errorColor : defaultColor,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 0.5),
+      child: Text.rich(
+        TextSpan(children: spans),
+        style: const TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 11.5,
+          height: 1.45,
+        ),
+      ),
     );
   }
 }
