@@ -521,60 +521,56 @@ class EasyTierManager {
     // Best-effort cleanup. RPC clients are keyed by port and recreated on demand.
   }
 
-  Future<void> _ensureConnected(EasyTierApi api) async {
-    if (!api.connected) {
-      await api.connect();
-    }
+  /// Discard a broken client so the next call creates a fresh one.
+  void _discardClient(int rpcPort) {
+    final old = _rpcClients.remove('$rpcPort');
+    old?.close();
   }
 
   Future<NodeInfo?> getNodeInfo(int rpcPort) async {
-    final api = _getOrCreateClient(rpcPort);
     try {
-      await _ensureConnected(api);
+      final api = _getOrCreateClient(rpcPort);
       return await api.getNodeInfo();
     } on RpcException {
       return null;
     } catch (_) {
-      _rpcClients.remove('$rpcPort');
+      _discardClient(rpcPort);
       return null;
     }
   }
 
   Future<List<PeerRouteInfo>> getRoutes(int rpcPort) async {
-    final api = _getOrCreateClient(rpcPort);
     try {
-      await _ensureConnected(api);
+      final api = _getOrCreateClient(rpcPort);
       return await api.listRoutes();
     } on RpcException {
       return [];
     } catch (_) {
-      _rpcClients.remove('$rpcPort');
+      _discardClient(rpcPort);
       return [];
     }
   }
 
   Future<List<PeerConnInfo>> getPeerConnections(int rpcPort) async {
-    final api = _getOrCreateClient(rpcPort);
     try {
-      await _ensureConnected(api);
+      final api = _getOrCreateClient(rpcPort);
       return await api.listPeers();
     } on RpcException {
       return [];
     } catch (_) {
-      _rpcClients.remove('$rpcPort');
+      _discardClient(rpcPort);
       return [];
     }
   }
 
   Future<List<MetricSnapshot>> getStats(int rpcPort) async {
-    final api = _getOrCreateClient(rpcPort);
     try {
-      await _ensureConnected(api);
+      final api = _getOrCreateClient(rpcPort);
       return await api.getStats();
     } on RpcException {
       return [];
     } catch (_) {
-      _rpcClients.remove('$rpcPort');
+      _discardClient(rpcPort);
       return [];
     }
   }

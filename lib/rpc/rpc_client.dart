@@ -52,6 +52,7 @@ class RpcClient {
     _socket = await Socket.connect(host, port,
         timeout: const Duration(seconds: 5));
     _connected = true;
+    _recvBuf.clear();
     _recvLen = 0;
 
     _socket!.listen(
@@ -66,6 +67,7 @@ class RpcClient {
     _connected = false;
     _socket?.destroy();
     _socket = null;
+    _recvBuf.clear();
     _recvLen = 0;
 
     // Fail all pending requests
@@ -132,13 +134,22 @@ class RpcClient {
     final completer = Completer<RpcResponse>();
     _pending[txId] = completer;
 
-    // Send
+    // Send — retry once on failure (socket may have gone stale)
     try {
       _socket!.add(frame);
-    } catch (e) {
+    } catch (_) {
       _pending.remove(txId);
-      _disconnect('Send failed: $e');
-      rethrow;
+      _disconnect('Send failed');
+      // Reconnect and retry once
+      try {
+        await connect();
+        _pending[txId] = completer;
+        _socket!.add(frame);
+      } catch (e) {
+        _pending.remove(txId);
+        _disconnect('Retry send failed: $e');
+        rethrow;
+      }
     }
 
     // Wait with timeout
