@@ -593,13 +593,6 @@ class _LogsTabState extends State<_LogsTab> {
   String _filter = '';
   bool _autoScroll = true;
 
-  static const _termBg = Color(0xFF1A1B26);
-  static const _termFg = Color(0xFFC0CAF5);
-  static const _termBar = Color(0xFF24283B);
-  static const _termBorder = Color(0xFF414868);
-  static const _termDim = Color(0xFF565F89);
-  static const _errColor = Color(0xFFF7768E);
-
   @override
   void dispose() {
     _scrollController.dispose();
@@ -611,6 +604,7 @@ class _LogsTabState extends State<_LogsTab> {
     final state = context.watch<AppState>();
     final config = state.configById(widget.configId);
     final allLogs = state.manager.getLogs(widget.configId, config: config);
+    final cs = Theme.of(context).colorScheme;
 
     final logs = _filter.isEmpty
         ? allLogs
@@ -629,76 +623,96 @@ class _LogsTabState extends State<_LogsTab> {
       });
     }
 
-    return Container(
-      color: _termBg,
-      child: Column(
-        children: [
-          // Terminal toolbar
-          Container(
-            color: _termBar,
-            padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
-            child: Row(
-              children: [
-                const Icon(Icons.terminal, size: 14, color: _termDim),
-                const SizedBox(width: 6),
-                Text('Terminal',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: _termDim,
-                        fontFamily: 'monospace')),
-                const Spacer(),
-                SizedBox(
-                  width: 200,
-                  height: 28,
-                  child: TextField(
-                    style: const TextStyle(
-                        fontSize: 11, color: _termFg, fontFamily: 'monospace'),
-                    decoration: InputDecoration(
-                      hintText: 'Filter...',
-                      hintStyle: const TextStyle(color: _termDim, fontSize: 11),
-                      prefixIcon: const Icon(Icons.search,
-                          size: 14, color: _termDim),
-                      prefixIconConstraints:
-                          const BoxConstraints(minWidth: 28, minHeight: 0),
-                      filled: true,
-                      fillColor: _termBg,
-                      isDense: true,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: _termBorder),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: _termBorder),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: _termDim),
-                      ),
-                    ),
-                    onChanged: (v) => setState(() => _filter = v),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                _TermButton(
-                  icon: _autoScroll
-                      ? Icons.vertical_align_bottom
-                      : Icons.vertical_align_top,
-                  tooltip: _autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF',
-                  active: _autoScroll,
-                  onPressed: () => setState(() => _autoScroll = !_autoScroll),
-                ),
-                const SizedBox(width: 4),
-                Text('${logs.length}',
-                    style: const TextStyle(
-                        fontSize: 10, color: _termDim, fontFamily: 'monospace')),
-              ],
+    return Column(
+      children: [
+        // Toolbar
+        Container(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerLow,
+            border: Border(
+              bottom: BorderSide(
+                  color: cs.outlineVariant.withValues(alpha: 0.4)),
             ),
           ),
-          // Terminal content
-          Expanded(
+          padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+          child: Row(
+            children: [
+              Icon(Icons.terminal, size: 14, color: cs.outline),
+              const SizedBox(width: 6),
+              Text('Terminal',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: cs.outline,
+                      fontFamily: 'monospace')),
+              const Spacer(),
+              SizedBox(
+                width: 200,
+                height: 28,
+                child: TextField(
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: cs.onSurface,
+                      fontFamily: 'monospace'),
+                  decoration: InputDecoration(
+                    hintText: 'Filter...',
+                    hintStyle: TextStyle(color: cs.outline, fontSize: 11),
+                    prefixIcon:
+                        Icon(Icons.search, size: 14, color: cs.outline),
+                    prefixIconConstraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 0),
+                    filled: true,
+                    fillColor: cs.surfaceContainerLowest,
+                    isDense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(color: cs.outlineVariant),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(color: cs.outlineVariant),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(color: cs.outline),
+                    ),
+                  ),
+                  onChanged: (v) => setState(() => _filter = v),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Tooltip(
+                message:
+                    _autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => setState(() => _autoScroll = !_autoScroll),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      _autoScroll
+                          ? Icons.vertical_align_bottom
+                          : Icons.vertical_align_top,
+                      size: 16,
+                      color: _autoScroll ? cs.primary : cs.outline,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text('${logs.length}',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: cs.outline,
+                      fontFamily: 'monospace')),
+            ],
+          ),
+        ),
+        // Log content
+        Expanded(
+          child: Container(
+            color: cs.surfaceContainerLowest,
             child: logs.isEmpty
                 ? const SizedBox.shrink()
                 : ListView.builder(
@@ -710,7 +724,8 @@ class _LogsTabState extends State<_LogsTab> {
                       final isErr = line.startsWith('[ERR]');
                       final spans = parseAnsi(
                         line,
-                        defaultColor: isErr ? _errColor : _termFg,
+                        defaultColor:
+                            isErr ? cs.error : cs.onSurfaceVariant,
                       );
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 0.5),
@@ -726,41 +741,8 @@ class _LogsTabState extends State<_LogsTab> {
                     },
                   ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TermButton extends StatelessWidget {
-  const _TermButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-    this.active = false,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(icon,
-              size: 16,
-              color: active
-                  ? const Color(0xFF7AA2F7)
-                  : _LogsTabState._termDim),
         ),
-      ),
+      ],
     );
   }
 }
@@ -899,55 +881,53 @@ class _StoppedView extends StatelessWidget {
           ),
           if (recentLogs.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1B26),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF414868)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: Row(
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        const Icon(Icons.terminal, size: 14,
-                            color: Color(0xFF565F89)),
+                        Icon(Icons.terminal, size: 14, color: cs.outline),
                         const SizedBox(width: 6),
                         Text('Recent Instance Logs',
-                            style: ts.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFFC0CAF5))),
+                            style: ts.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600)),
                       ],
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: recentTail.map((line) {
-                        final isErr = line.startsWith('[ERR]');
-                        final spans = parseAnsi(line,
-                            defaultColor: isErr
-                                ? const Color(0xFFF7768E)
-                                : const Color(0xFFC0CAF5));
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: SelectableText.rich(
-                            TextSpan(children: spans),
-                            style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 11.5,
-                              height: 1.45,
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: recentTail.map((line) {
+                          final isErr = line.startsWith('[ERR]');
+                          final spans = parseAnsi(line,
+                              defaultColor: isErr
+                                  ? cs.error
+                                  : cs.onSurfaceVariant);
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: SelectableText.rich(
+                              TextSpan(children: spans),
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11.5,
+                                height: 1.45,
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
+                          );
+                        }).toList(),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
