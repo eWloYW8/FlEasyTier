@@ -70,6 +70,12 @@ class PlatformVpn {
     return _channel.invokeMethod<String>('getEmbeddedCoreVersion');
   }
 
+  /// Get the user-visible Android device name for runtime defaults.
+  static Future<String?> getDeviceName() async {
+    if (!Platform.isAndroid) return null;
+    return _channel.invokeMethod<String>('getDeviceName');
+  }
+
   // ── Platform requirements info ──
 
   /// Returns a human-readable message about what the current platform

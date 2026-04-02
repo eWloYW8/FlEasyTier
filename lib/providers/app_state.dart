@@ -318,9 +318,18 @@ class AppState extends ChangeNotifier {
     );
 
     if (Platform.isAndroid) {
-      if (config.instanceName.isEmpty) {
+      if (config.instanceName.isEmpty || config.hostname.isEmpty) {
         final runtimeConfig = config.copyWith(tomlData: config.tomlData);
-        runtimeConfig.instanceName = config.id;
+        if (config.instanceName.isEmpty) {
+          runtimeConfig.instanceName = config.id;
+        }
+        if (config.hostname.isEmpty) {
+          final deviceName = await PlatformVpn.getDeviceName();
+          runtimeConfig.hostname =
+              (deviceName == null || deviceName.trim().isEmpty)
+              ? 'Android'
+              : deviceName.trim();
+        }
         config = runtimeConfig;
       }
       return _startAndroidInstance(config);

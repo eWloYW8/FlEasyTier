@@ -3,6 +3,8 @@ package com.ewloyw8.fleasytier
 import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -57,9 +59,24 @@ class MainActivity : FlutterActivity() {
                     "getEmbeddedCoreVersion" -> {
                         result.success(BuildConfig.EASYTIER_ANDROID_VERSION)
                     }
+                    "getDeviceName" -> {
+                        result.success(resolveDeviceName())
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun resolveDeviceName(): String {
+        val candidates = listOf(
+            Settings.Global.getString(contentResolver, "device_name"),
+            Settings.Secure.getString(contentResolver, "bluetooth_name"),
+            Build.MODEL,
+            Build.DEVICE,
+            Build.PRODUCT,
+        )
+
+        return candidates.firstOrNull { !it.isNullOrBlank() }?.trim() ?: "Android"
     }
 
     private fun prepareVpn(result: MethodChannel.Result) {
