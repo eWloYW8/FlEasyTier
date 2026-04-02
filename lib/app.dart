@@ -107,7 +107,8 @@ class _MainShellState extends State<_MainShell>
       trayManager.addListener(this);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _syncWindowState();
-        _initTray();
+        final state = context.read<AppState>();
+        if (state.closeToTray) _initTray();
       });
     }
   }
@@ -194,6 +195,13 @@ class _MainShellState extends State<_MainShell>
     }
     await _refreshTrayMenu(state);
     _isTrayReady = true;
+  }
+
+  Future<void> _destroyTray() async {
+    if (!_isTrayReady) return;
+    await trayManager.destroy();
+    _isTrayReady = false;
+    _lastTrayMenuSignature = null;
   }
 
   Future<void> _refreshTrayMenu(AppState state) async {
@@ -472,9 +480,14 @@ class _MainShellState extends State<_MainShell>
             ),
           );
 
-    if (_isDesktop && _isTrayReady) {
+    if (_isDesktop) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (!mounted) return;
+        if (appState.closeToTray && !_isTrayReady) {
+          _initTray();
+        } else if (!appState.closeToTray && _isTrayReady) {
+          _destroyTray();
+        } else if (_isTrayReady) {
           _refreshTrayMenu(appState);
         }
       });
