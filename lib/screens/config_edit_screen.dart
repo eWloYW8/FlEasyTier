@@ -78,9 +78,9 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
       ),
       body: Form(
         key: _formKey,
-        child: ListView(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          children: [
+          child: Column(children: [
             _Section(
               title: 'Network Identity',
               children: [
@@ -556,7 +556,7 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
               ],
             ),
             const SizedBox(height: 80),
-          ],
+          ]),
         ),
       ),
     );
