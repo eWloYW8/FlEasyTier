@@ -886,11 +886,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Gracefully stop all instances and the privileged helper.
+  /// Called before the app window closes.
+  Future<void> shutdown() async {
+    _pollTimer?.cancel();
+    await _manager.stopAll();
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
     _errorLogController.close();
-    _manager.stopAll();
     super.dispose();
   }
 }

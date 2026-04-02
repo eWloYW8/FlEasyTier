@@ -321,10 +321,14 @@ class _MainShellState extends State<_MainShell>
   Future<void> _quitApp() async {
     if (_isClosing) return;
     _isClosing = true;
+    final appState = context.read<AppState>();
     if (_isDesktop) {
       await trayManager.destroy();
       await windowManager.setSkipTaskbar(false);
     }
+    // Shut down the privileged helper and all managed processes before
+    // closing the window so the elevated daemon does not linger.
+    await appState.shutdown();
     await windowManager.setPreventClose(false);
     await windowManager.close();
   }
