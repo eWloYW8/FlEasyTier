@@ -118,6 +118,8 @@ class EasyTierVpnService : VpnService() {
     private var lastLoggedProxyCidrs: Set<String> = emptySet()
     private var logcatProcess: Process? = null
     private var logcatThread: Thread? = null
+    @Volatile
+    private var logcatBridgeRunning: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -392,6 +394,7 @@ class EasyTierVpnService : VpnService() {
     private fun startNativeLogBridge() {
         stopNativeLogBridge()
         try {
+            logcatBridgeRunning = true
             val process = ProcessBuilder(
                 "logcat",
                 "-v",
@@ -405,27 +408,41 @@ class EasyTierVpnService : VpnService() {
                 .start()
             logcatProcess = process
             logcatThread = thread(start = true, name = "FlEasyTier-LogcatBridge") {
-                process.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { raw ->
-                        val line = raw.trim()
-                        if (line.isEmpty()) return@forEach
-                        appendServiceLog("[JNI] $line")
+                try {
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { raw ->
+                            if (!logcatBridgeRunning || Thread.currentThread().isInterrupted) {
+                                return@forEach
+                            }
+                            val line = raw.trim()
+                            if (line.isEmpty()) return@forEach
+                            appendServiceLog("[JNI] $line")
+                        }
+                    }
+                } catch (_: Throwable) {
+                    if (logcatBridgeRunning) {
+                        appendServiceLog("Native logcat bridge stopped unexpectedly")
                     }
                 }
             }
             appendServiceLog("Attached native logcat bridge for EasyTier-JNI")
         } catch (t: Throwable) {
+            logcatBridgeRunning = false
             appendServiceLog("Failed to attach native logcat bridge: ${t.message ?: t}")
         }
     }
 
     private fun stopNativeLogBridge() {
+        logcatBridgeRunning = false
         try {
             logcatProcess?.destroy()
         } catch (_: Throwable) {
         }
         logcatProcess = null
-        logcatThread?.interrupt()
+        try {
+            logcatThread?.interrupt()
+        } catch (_: Throwable) {
+        }
         logcatThread = null
     }
 

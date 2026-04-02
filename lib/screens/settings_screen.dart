@@ -49,23 +49,54 @@ class SettingsScreen extends StatelessWidget {
             title: 'Appearance',
             children: [
               const SizedBox(height: 8),
-              SegmentedButton<ThemeMode>(
-                segments: const [
-                  ButtonSegment(
-                      value: ThemeMode.system,
-                      icon: Icon(Icons.brightness_auto),
-                      label: Text('System')),
-                  ButtonSegment(
-                      value: ThemeMode.light,
-                      icon: Icon(Icons.light_mode),
-                      label: Text('Light')),
-                  ButtonSegment(
-                      value: ThemeMode.dark,
-                      icon: Icon(Icons.dark_mode),
-                      label: Text('Dark')),
-                ],
-                selected: {state.themeMode},
-                onSelectionChanged: (s) => state.setThemeMode(s.first),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth < 380) {
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _ThemeModeChip(
+                          icon: Icons.brightness_auto,
+                          label: 'System',
+                          selected: state.themeMode == ThemeMode.system,
+                          onTap: () => state.setThemeMode(ThemeMode.system),
+                        ),
+                        _ThemeModeChip(
+                          icon: Icons.light_mode,
+                          label: 'Light',
+                          selected: state.themeMode == ThemeMode.light,
+                          onTap: () => state.setThemeMode(ThemeMode.light),
+                        ),
+                        _ThemeModeChip(
+                          icon: Icons.dark_mode,
+                          label: 'Dark',
+                          selected: state.themeMode == ThemeMode.dark,
+                          onTap: () => state.setThemeMode(ThemeMode.dark),
+                        ),
+                      ],
+                    );
+                  }
+
+                  return SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                          value: ThemeMode.system,
+                          icon: Icon(Icons.brightness_auto),
+                          label: Text('System')),
+                      ButtonSegment(
+                          value: ThemeMode.light,
+                          icon: Icon(Icons.light_mode),
+                          label: Text('Light')),
+                      ButtonSegment(
+                          value: ThemeMode.dark,
+                          icon: Icon(Icons.dark_mode),
+                          label: Text('Dark')),
+                    ],
+                    selected: {state.themeMode},
+                    onSelectionChanged: (s) => state.setThemeMode(s.first),
+                  );
+                },
               ),
               const SizedBox(height: 20),
               _ColorPicker(
@@ -81,13 +112,11 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           // ── Behavior ──
-          _SettingsCard(
-            icon: Icons.tune,
-            title: 'Behavior',
-            children: [
-              if (Platform.isWindows ||
-                  Platform.isLinux ||
-                  Platform.isMacOS) ...[
+          if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+            _SettingsCard(
+              icon: Icons.tune,
+              title: 'Behavior',
+              children: [
                 SwitchListTile(
                   title: const Text('Close to tray'),
                   value: state.closeToTray,
@@ -95,8 +124,7 @@ class SettingsScreen extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                 ),
               ],
-            ],
-          ),
+            ),
 
           _SettingsCard(
             icon: Icons.receipt_long_outlined,
@@ -130,7 +158,9 @@ class SettingsScreen extends StatelessWidget {
             icon: Icons.import_export,
             title: 'Import / Export',
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   OutlinedButton.icon(
                     icon: const Icon(Icons.file_upload_outlined, size: 18),
@@ -322,6 +352,31 @@ class _SchemeVariantPicker extends StatelessWidget {
           visualDensity: VisualDensity.compact,
         );
       }).toList(),
+    );
+  }
+}
+
+class _ThemeModeChip extends StatelessWidget {
+  const _ThemeModeChip({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      avatar: Icon(icon, size: 18),
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      visualDensity: VisualDensity.compact,
     );
   }
 }
