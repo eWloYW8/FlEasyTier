@@ -11,6 +11,34 @@ val hasReleaseSigning = listOf(
     releaseKeyPassword,
 ).all { !it.isNullOrBlank() }
 
+fun readEasyTierAndroidVersion(): String {
+    val cargoToml = file("../third_party/EasyTier/easytier/Cargo.toml")
+    val content = cargoToml.readText()
+    val match = Regex("""(?m)^version\s*=\s*"([^"]+)"""").find(content)
+    return match?.groupValues?.getOrNull(1) ?: "unknown"
+}
+
+fun readEasyTierAndroidCommit(): String {
+    val gitHead = file("../third_party/EasyTier/.git")
+    if (!gitHead.exists()) {
+        return "unknown"
+    }
+    return try {
+        val stdout = java.io.ByteArrayOutputStream()
+        project.exec {
+            workingDir = file("../third_party/EasyTier")
+            commandLine("git", "rev-parse", "--short", "HEAD")
+            standardOutput = stdout
+        }
+        stdout.toString().trim().ifEmpty { "unknown" }
+    } catch (_: Exception) {
+        "unknown"
+    }
+}
+
+val easyTierAndroidVersion =
+    "easytier-ffi ${readEasyTierAndroidVersion()}-${readEasyTierAndroidCommit()}"
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -41,6 +69,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        buildConfigField(
+            "String",
+            "EASYTIER_ANDROID_VERSION",
+            "\"$easyTierAndroidVersion\"",
+        )
     }
 
     signingConfigs {

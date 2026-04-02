@@ -54,6 +54,9 @@ class MainActivity : FlutterActivity() {
                     "getManagedNetworkStatus" -> {
                         result.success(EasyTierVpnService.getStatus())
                     }
+                    "getEmbeddedCoreVersion" -> {
+                        result.success(BuildConfig.EASYTIER_ANDROID_VERSION)
+                    }
                     else -> result.notImplemented()
                 }
             }

@@ -64,6 +64,12 @@ class PlatformVpn {
     return result ?? const {};
   }
 
+  /// Get the embedded EasyTier version string exposed by the Android build.
+  static Future<String?> getEmbeddedCoreVersion() async {
+    if (!Platform.isAndroid) return null;
+    return _channel.invokeMethod<String>('getEmbeddedCoreVersion');
+  }
+
   // ── Platform requirements info ──
 
   /// Returns a human-readable message about what the current platform

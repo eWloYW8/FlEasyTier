@@ -9,6 +9,7 @@ import '../models/network_config.dart';
 import '../models/network_instance.dart';
 import '../rpc/easytier_api.dart';
 import '../rpc/rpc_client.dart';
+import 'platform_vpn.dart';
 import 'privileged_session.dart';
 
 typedef AppLogWriter =
@@ -108,6 +109,18 @@ class EasyTierManager {
   }
 
   Future<String?> getCoreVersion() async {
+    if (Platform.isAndroid) {
+      if (_coreVersionCache != null && _coreVersionCache!.trim().isNotEmpty) {
+        return _coreVersionCache;
+      }
+      final version = await PlatformVpn.getEmbeddedCoreVersion();
+      if (version != null && version.trim().isNotEmpty) {
+        _coreVersionCache = version.trim();
+        return _coreVersionCache;
+      }
+      return null;
+    }
+
     if (coreBinaryPath == null) return null;
     if (_coreVersionCache != null && _coreVersionCache!.trim().isNotEmpty) {
       return _coreVersionCache;
