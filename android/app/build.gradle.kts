@@ -1,4 +1,6 @@
+import java.io.File
 import org.gradle.internal.os.OperatingSystem
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH")
 val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -24,13 +26,16 @@ fun readEasyTierAndroidCommit(): String {
         return "unknown"
     }
     return try {
-        val stdout = java.io.ByteArrayOutputStream()
-        project.exec {
-            workingDir = file("../third_party/EasyTier")
-            commandLine("git", "rev-parse", "--short", "HEAD")
-            standardOutput = stdout
+        val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+            .directory(file("../third_party/EasyTier"))
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+        if (process.waitFor() != 0) {
+            "unknown"
+        } else {
+            output.ifEmpty { "unknown" }
         }
-        stdout.toString().trim().ifEmpty { "unknown" }
     } catch (_: Exception) {
         "unknown"
     }
@@ -54,10 +59,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -97,6 +98,12 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
