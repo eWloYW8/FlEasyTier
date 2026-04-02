@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:windows_single_instance/windows_single_instance.dart';
 
 import 'app.dart';
 import 'models/app_log_entry.dart';
@@ -17,6 +18,17 @@ void main(List<String> args) async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    await WindowsSingleInstance.ensureSingleInstance(
+      args,
+      'FlEasyTier-{4a8d7e2b-single}',
+      onSecondWindow: (args) async {
+        await windowManager.show();
+        await windowManager.focus();
+      },
+    );
+  }
 
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
