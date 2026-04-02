@@ -11,7 +11,7 @@ class PortForwardEditor extends StatelessWidget {
   });
 
   final List<PortForwardConfig> items;
-  final VoidCallback onChanged;
+  final ValueChanged<List<PortForwardConfig>> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +57,8 @@ class PortForwardEditor extends StatelessWidget {
                 trailing: IconButton(
                   icon: Icon(Icons.close, size: 18, color: cs.error),
                   onPressed: () {
-                    items.removeAt(i);
-                    onChanged();
+                    final updated = [...items]..removeAt(i);
+                    onChanged(updated);
                   },
                 ),
               ),
@@ -177,14 +177,16 @@ class PortForwardEditor extends StatelessWidget {
                 if (bindPort > 0 &&
                     dstPort > 0 &&
                     dstIpCtrl.text.trim().isNotEmpty) {
-                  items.add(PortForwardConfig(
-                    bindIp: bindIpCtrl.text.trim(),
-                    bindPort: bindPort,
-                    dstIp: dstIpCtrl.text.trim(),
-                    dstPort: dstPort,
-                    proto: proto,
-                  ));
-                  onChanged();
+                  onChanged([
+                    ...items,
+                    PortForwardConfig(
+                      bindIp: bindIpCtrl.text.trim(),
+                      bindPort: bindPort,
+                      dstIp: dstIpCtrl.text.trim(),
+                      dstPort: dstPort,
+                      proto: proto,
+                    ),
+                  ]);
                   Navigator.pop(ctx);
                 }
               },

@@ -277,7 +277,8 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
                 ],
                 PortForwardEditor(
                   items: _cfg.portForwards,
-                  onChanged: () => setState(() {}),
+                  onChanged: (items) =>
+                      setState(() => _cfg.portForwards = items),
                 ),
               ],
             ),

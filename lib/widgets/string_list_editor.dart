@@ -24,14 +24,13 @@ class _StringListEditorState extends State<StringListEditor> {
   void _add() {
     final text = _ctrl.text.trim();
     if (text.isEmpty) return;
-    widget.items.add(text);
     _ctrl.clear();
-    widget.onChanged(widget.items);
+    widget.onChanged([...widget.items, text]);
   }
 
   void _remove(int index) {
-    widget.items.removeAt(index);
-    widget.onChanged(widget.items);
+    final updated = [...widget.items]..removeAt(index);
+    widget.onChanged(updated);
   }
 
   @override
