@@ -2,6 +2,7 @@
 
 #include <dwmapi.h>
 #include <flutter_windows.h>
+#include <windowsx.h>
 
 #include "resource.h"
 
@@ -14,6 +15,10 @@ namespace {
 /// See: https://docs.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+
+#ifndef SM_CXPADDEDBORDER
+#define SM_CXPADDEDBORDER 92
 #endif
 
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
@@ -30,11 +35,60 @@ constexpr const wchar_t kGetPreferredBrightnessRegValue[] = L"AppsUseLightTheme"
 static int g_active_window_count = 0;
 
 using EnableNonClientDpiScaling = BOOL __stdcall(HWND hwnd);
+using RtlGetVersionPtr = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
 
 // Scale helper to convert logical scaler values to physical using passed in
 // scale factor
 int Scale(int source, double scale_factor) {
   return static_cast<int>(source * scale_factor);
+}
+
+bool ShouldUseLegacyCustomFrame() {
+  HMODULE ntdll_module = GetModuleHandleW(L"ntdll.dll");
+  if (!ntdll_module) {
+    return false;
+  }
+
+  auto rtl_get_version = reinterpret_cast<RtlGetVersionPtr>(
+      GetProcAddress(ntdll_module, "RtlGetVersion"));
+  if (rtl_get_version == nullptr) {
+    return false;
+  }
+
+  RTL_OSVERSIONINFOW version_info{};
+  version_info.dwOSVersionInfoSize = sizeof(version_info);
+  if (rtl_get_version(&version_info) != 0) {
+    return false;
+  }
+
+  return version_info.dwMajorVersion < 10;
+}
+
+int GetSystemMetricForWindow(HWND hwnd, int index) {
+  HMODULE user32_module = LoadLibraryA("User32.dll");
+  if (!user32_module) {
+    return GetSystemMetrics(index);
+  }
+
+  using GetSystemMetricsForDpiProc = int __stdcall(int, UINT);
+  auto get_system_metrics_for_dpi =
+      reinterpret_cast<GetSystemMetricsForDpiProc*>(
+          GetProcAddress(user32_module, "GetSystemMetricsForDpi"));
+
+  int value = 0;
+  if (get_system_metrics_for_dpi != nullptr) {
+    UINT dpi = 96;
+    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if (monitor != nullptr) {
+      dpi = FlutterDesktopGetDpiForMonitor(monitor);
+    }
+    value = get_system_metrics_for_dpi(index, dpi);
+  } else {
+    value = GetSystemMetrics(index);
+  }
+
+  FreeLibrary(user32_module);
+  return value;
 }
 
 // Dynamically loads the |EnableNonClientDpiScaling| from the User32 module.
@@ -111,6 +165,76 @@ void WindowClassRegistrar::UnregisterWindowClass() {
   class_registered_ = false;
 }
 
+bool Win32Window::UseLegacyCustomFrame() {
+  static const bool kUseLegacyCustomFrame = ShouldUseLegacyCustomFrame();
+  return kUseLegacyCustomFrame;
+}
+
+bool Win32Window::IsWindowMaximized(HWND window) {
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(WINDOWPLACEMENT);
+  return GetWindowPlacement(window, &placement) &&
+         placement.showCmd == SW_MAXIMIZE;
+}
+
+int Win32Window::GetResizeHandleSize() {
+  return 8;
+}
+
+LRESULT Win32Window::HitTestNCA(HWND window, WPARAM wparam, LPARAM lparam) {
+  (void)wparam;
+  POINT cursor_point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+  RECT window_rect;
+  GetWindowRect(window, &window_rect);
+
+  int frame_x = GetSystemMetricForWindow(window, SM_CXSIZEFRAME) +
+                GetSystemMetricForWindow(window, SM_CXPADDEDBORDER);
+  int frame_y = GetSystemMetricForWindow(window, SM_CYSIZEFRAME) +
+                GetSystemMetricForWindow(window, SM_CXPADDEDBORDER);
+  if (frame_x < GetResizeHandleSize()) {
+    frame_x = GetResizeHandleSize();
+  }
+  if (frame_y < GetResizeHandleSize()) {
+    frame_y = GetResizeHandleSize();
+  }
+
+  const bool left = cursor_point.x >= window_rect.left &&
+                    cursor_point.x < window_rect.left + frame_x;
+  const bool right = cursor_point.x < window_rect.right &&
+                     cursor_point.x >= window_rect.right - frame_x;
+  const bool top = cursor_point.y >= window_rect.top &&
+                   cursor_point.y < window_rect.top + frame_y;
+  const bool bottom = cursor_point.y < window_rect.bottom &&
+                      cursor_point.y >= window_rect.bottom - frame_y;
+
+  if (top && left) {
+    return HTTOPLEFT;
+  }
+  if (top && right) {
+    return HTTOPRIGHT;
+  }
+  if (bottom && left) {
+    return HTBOTTOMLEFT;
+  }
+  if (bottom && right) {
+    return HTBOTTOMRIGHT;
+  }
+  if (left) {
+    return HTLEFT;
+  }
+  if (right) {
+    return HTRIGHT;
+  }
+  if (top) {
+    return HTTOP;
+  }
+  if (bottom) {
+    return HTBOTTOM;
+  }
+
+  return HTCLIENT;
+}
+
 Win32Window::Win32Window() {
   ++g_active_window_count;
 }
@@ -179,6 +303,27 @@ Win32Window::MessageHandler(HWND hwnd,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
   switch (message) {
+    case WM_NCCALCSIZE:
+      if (UseLegacyCustomFrame() && wparam == TRUE) {
+        if (IsWindowMaximized(hwnd)) {
+          auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam);
+          HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+          MONITORINFO monitor_info{};
+          monitor_info.cbSize = sizeof(MONITORINFO);
+          if (GetMonitorInfo(monitor, &monitor_info)) {
+            params->rgrc[0] = monitor_info.rcWork;
+          }
+        }
+        return 0;
+      }
+      break;
+
+    case WM_NCHITTEST:
+      if (UseLegacyCustomFrame() && !IsWindowMaximized(hwnd)) {
+        return HitTestNCA(hwnd, wparam, lparam);
+      }
+      break;
+
     case WM_DESTROY:
       window_handle_ = nullptr;
       Destroy();

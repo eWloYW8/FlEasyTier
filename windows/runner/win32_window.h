@@ -89,6 +89,10 @@ class Win32Window {
 
   // Update the window frame's theme to match the system theme.
   static void UpdateTheme(HWND const window);
+  static bool UseLegacyCustomFrame();
+  static bool IsWindowMaximized(HWND window);
+  static int GetResizeHandleSize();
+  static LRESULT HitTestNCA(HWND window, WPARAM wparam, LPARAM lparam);
 
   bool quit_on_close_ = false;
 
