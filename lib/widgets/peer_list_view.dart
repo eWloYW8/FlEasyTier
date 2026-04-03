@@ -339,13 +339,6 @@ class _PeerRowState extends State<_PeerRow> {
                                     '${s.route!.currentCost(widget.latencyFirstEnabled)}',
                               }),
                             ),
-                          if (latencyFirstLabel != null)
-                            _MetaLine(
-                              icon: Icons.speed_outlined,
-                              text: latencyFirstLabel == 'DIRECT'
-                                  ? l10n.t('peer.lf_direct')
-                                  : latencyFirstLabel,
-                            ),
                           _MetaLine(
                             icon: Icons.download_rounded,
                             text: _fmtBytes(s.totalRx),
