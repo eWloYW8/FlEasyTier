@@ -688,21 +688,36 @@ class _DropdownField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
+    return FormField<String>(
       initialValue: value,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
-      items: items.entries
-          .map(
-            (entry) => DropdownMenuItem<String>(
-              value: entry.key,
-              child: Text(entry.value),
+      builder: (field) {
+        return InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            errorText: field.errorText,
+          ),
+          isEmpty: field.value == null || field.value!.isEmpty,
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: field.value,
+              isExpanded: true,
+              items: items.entries
+                  .map(
+                    (entry) => DropdownMenuItem<String>(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (nextValue) {
+                field.didChange(nextValue);
+                onChanged(nextValue);
+              },
             ),
-          )
-          .toList(),
-      onChanged: onChanged,
+          ),
+        );
+      },
     );
   }
 }

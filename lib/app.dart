@@ -67,16 +67,17 @@ class FlEasyTierApp extends StatelessWidget {
     );
 
     final cs = theme.colorScheme;
-    return theme.copyWith(
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: cs.outlineVariant),
-        ),
+    final cardTheme = theme.cardTheme.copyWith(
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: cs.outlineVariant),
       ),
+    );
+    return theme.copyWith(
+      cardTheme: cardTheme,
     );
   }
 
