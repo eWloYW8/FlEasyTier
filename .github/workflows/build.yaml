@@ -18,18 +18,29 @@ jobs:
           - platform: windows
             os: windows-latest
             arch: amd64
+            artifact_suffix: windows-amd64
+            yy_thunks: false
+          - platform: windows
+            os: windows-latest
+            arch: amd64
+            artifact_suffix: windows-amd64-win7
+            yy_thunks: true
           - platform: linux
             os: ubuntu-22.04
             arch: amd64
+            artifact_suffix: linux-amd64
           - platform: android
             os: ubuntu-22.04
             arch: universal
+            artifact_suffix: android
           - platform: macos
             os: macos-15
             arch: amd64
+            artifact_suffix: macos-amd64
           - platform: macos
             os: macos-latest
             arch: arm64
+            artifact_suffix: macos-arm64
 
     steps:
       - name: Checkout
@@ -84,7 +95,13 @@ jobs:
 
       - name: Build Windows
         if: matrix.platform == 'windows'
-        run: flutter build windows --release
+        shell: pwsh
+        run: |
+          if ("${{ matrix.yy_thunks }}" -eq "true") {
+            flutter build windows --release --dart-define=FLEASYTIER_ENABLE_YY_THUNKS=true
+          } else {
+            flutter build windows --release
+          }
 
       - name: Build Linux
         if: matrix.platform == 'linux'
@@ -128,7 +145,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "FlEasyTier-${version}-windows-${{ matrix.arch }}.zip"
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "FlEasyTier-${version}-${{ matrix.artifact_suffix }}.zip"
 
       - name: Package Windows Setup
         if: matrix.platform == 'windows'
@@ -136,7 +153,7 @@ jobs:
         env:
           SOURCE_DIR: ${{ github.workspace }}\build\windows\x64\runner\Release
           OUTPUT_DIR: ${{ github.workspace }}
-          OUTPUT_FILENAME: FlEasyTier-${{ github.ref_name }}-windows-${{ matrix.arch }}-setup
+          OUTPUT_FILENAME: FlEasyTier-${{ github.ref_name }}-${{ matrix.artifact_suffix }}-setup
           ICON_FILE: ${{ github.workspace }}\windows\runner\resources\app_icon.ico
           APP_VERSION: ${{ github.ref_name }}
         run: |
@@ -166,7 +183,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: artifact-${{ matrix.platform }}-${{ matrix.arch }}
+          name: artifact-${{ matrix.platform }}-${{ matrix.artifact_suffix }}
           path: FlEasyTier-*
           overwrite: true
 

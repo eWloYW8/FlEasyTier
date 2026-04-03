@@ -32,6 +32,59 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+function(fleasytier_read_flutter_define DEFINE_NAME OUT_VAR)
+  set(${OUT_VAR} "" PARENT_SCOPE)
+  set(FLEASYTIER_GENERATED_CONFIG
+    "${CMAKE_CURRENT_SOURCE_DIR}/flutter/ephemeral/generated_config.cmake"
+  )
+  if(NOT EXISTS "${FLEASYTIER_GENERATED_CONFIG}")
+    return()
+  endif()
+
+  file(READ "${FLEASYTIER_GENERATED_CONFIG}" FLEASYTIER_GENERATED_CONFIG_CONTENT)
+  string(REGEX MATCH "\"DART_DEFINES=([^\"]*)\"" FLEASYTIER_DART_DEFINES_LINE
+    "${FLEASYTIER_GENERATED_CONFIG_CONTENT}"
+  )
+  if(NOT FLEASYTIER_DART_DEFINES_LINE)
+    return()
+  endif()
+
+  set(FLEASYTIER_DART_DEFINES "${CMAKE_MATCH_1}")
+  string(REPLACE "," ";" FLEASYTIER_DART_DEFINES_LIST "${FLEASYTIER_DART_DEFINES}")
+  foreach(FLEASYTIER_DART_DEFINE ${FLEASYTIER_DART_DEFINES_LIST})
+    execute_process(
+      COMMAND powershell
+        -NoProfile
+        -ExecutionPolicy Bypass
+        -Command
+        "[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${FLEASYTIER_DART_DEFINE}'))"
+      OUTPUT_VARIABLE FLEASYTIER_DART_DEFINE_DECODED
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+    )
+    if(FLEASYTIER_DART_DEFINE_DECODED MATCHES "^${DEFINE_NAME}=(.*)$")
+      set(${OUT_VAR} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+endfunction()
+
+fleasytier_read_flutter_define("FLEASYTIER_ENABLE_YY_THUNKS" FLEASYTIER_ENABLE_YY_THUNKS_FROM_DART_DEFINE)
+
+set(FLEASYTIER_ENABLE_YY_THUNKS_DEFAULT OFF)
+if(FLEASYTIER_ENABLE_YY_THUNKS_FROM_DART_DEFINE)
+  string(TOUPPER "${FLEASYTIER_ENABLE_YY_THUNKS_FROM_DART_DEFINE}" FLEASYTIER_ENABLE_YY_THUNKS_VALUE)
+  if(FLEASYTIER_ENABLE_YY_THUNKS_VALUE STREQUAL "1" OR
+     FLEASYTIER_ENABLE_YY_THUNKS_VALUE STREQUAL "TRUE" OR
+     FLEASYTIER_ENABLE_YY_THUNKS_VALUE STREQUAL "ON" OR
+     FLEASYTIER_ENABLE_YY_THUNKS_VALUE STREQUAL "YES")
+    set(FLEASYTIER_ENABLE_YY_THUNKS_DEFAULT ON)
+  endif()
+endif()
+
+option(FLEASYTIER_ENABLE_YY_THUNKS "Enable YY-Thunks for Windows 7 compatibility" ${FLEASYTIER_ENABLE_YY_THUNKS_DEFAULT})
+set(FLEASYTIER_YY_THUNKS_VERSION "1.1.9" CACHE STRING "YY-Thunks package version")
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by
@@ -45,12 +98,73 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
 endfunction()
 
+if(FLEASYTIER_ENABLE_YY_THUNKS)
+  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(FLEASYTIER_YY_THUNKS_ARCH "x64")
+  elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    set(FLEASYTIER_YY_THUNKS_ARCH "x86")
+  else()
+    message(FATAL_ERROR "YY-Thunks only provides x86/x64 support.")
+  endif()
+
+  set(FLEASYTIER_YY_THUNKS_ROOT "${PROJECT_BINARY_DIR}/yy-thunks/${FLEASYTIER_YY_THUNKS_VERSION}")
+  set(FLEASYTIER_YY_THUNKS_PACKAGE "${FLEASYTIER_YY_THUNKS_ROOT}/YY-Thunks.${FLEASYTIER_YY_THUNKS_VERSION}.nupkg")
+  set(FLEASYTIER_YY_THUNKS_EXTRACT_DIR "${FLEASYTIER_YY_THUNKS_ROOT}/package")
+  set(FLEASYTIER_YY_THUNKS_OBJ
+    "${FLEASYTIER_YY_THUNKS_EXTRACT_DIR}/build/native/objs/${FLEASYTIER_YY_THUNKS_ARCH}/YY_Thunks_for_Win7.obj"
+  )
+
+  if(NOT EXISTS "${FLEASYTIER_YY_THUNKS_OBJ}")
+    file(MAKE_DIRECTORY "${FLEASYTIER_YY_THUNKS_ROOT}")
+    if(NOT EXISTS "${FLEASYTIER_YY_THUNKS_PACKAGE}")
+      file(
+        DOWNLOAD
+        "https://api.nuget.org/v3-flatcontainer/yy-thunks/${FLEASYTIER_YY_THUNKS_VERSION}/yy-thunks.${FLEASYTIER_YY_THUNKS_VERSION}.nupkg"
+        "${FLEASYTIER_YY_THUNKS_PACKAGE}"
+        STATUS FLEASYTIER_YY_THUNKS_DOWNLOAD_STATUS
+        SHOW_PROGRESS
+      )
+      list(GET FLEASYTIER_YY_THUNKS_DOWNLOAD_STATUS 0 FLEASYTIER_YY_THUNKS_DOWNLOAD_CODE)
+      list(GET FLEASYTIER_YY_THUNKS_DOWNLOAD_STATUS 1 FLEASYTIER_YY_THUNKS_DOWNLOAD_MESSAGE)
+      if(NOT FLEASYTIER_YY_THUNKS_DOWNLOAD_CODE EQUAL 0)
+        message(FATAL_ERROR
+          "Failed to download YY-Thunks ${FLEASYTIER_YY_THUNKS_VERSION}: "
+          "${FLEASYTIER_YY_THUNKS_DOWNLOAD_MESSAGE}"
+        )
+      endif()
+    endif()
+
+    file(MAKE_DIRECTORY "${FLEASYTIER_YY_THUNKS_EXTRACT_DIR}")
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E tar xvf "${FLEASYTIER_YY_THUNKS_PACKAGE}"
+      WORKING_DIRECTORY "${FLEASYTIER_YY_THUNKS_EXTRACT_DIR}"
+      COMMAND_ERROR_IS_FATAL ANY
+    )
+  endif()
+
+  if(NOT EXISTS "${FLEASYTIER_YY_THUNKS_OBJ}")
+    message(FATAL_ERROR
+      "YY-Thunks Win7 object file was not found at ${FLEASYTIER_YY_THUNKS_OBJ}"
+    )
+  endif()
+
+  function(fleasytier_enable_yy_thunks TARGET_NAME)
+    if(TARGET "${TARGET_NAME}")
+      target_link_libraries("${TARGET_NAME}" PRIVATE "${FLEASYTIER_YY_THUNKS_OBJ}")
+    endif()
+  endfunction()
+else()
+  function(fleasytier_enable_yy_thunks TARGET_NAME)
+  endfunction()
+endif()
+
 # Flutter library and tool build rules.
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
+fleasytier_enable_yy_thunks(${BINARY_NAME})
 
 set(REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(EASYTIER_EMBED_DIR "${PROJECT_BINARY_DIR}/embedded")
@@ -82,6 +196,14 @@ add_dependencies(${BINARY_NAME} embedded_easytier)
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+
+foreach(plugin ${FLUTTER_PLUGIN_LIST})
+  fleasytier_enable_yy_thunks(${plugin}_plugin)
+endforeach()
+
+foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
+  fleasytier_enable_yy_thunks(${ffi_plugin}_plugin)
+endforeach()
 
 
 # === Installation ===
