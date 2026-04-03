@@ -135,7 +135,7 @@ class PrivilegedSession {
 
     try {
       if (Platform.isWindows) {
-        final result = await Process.run(
+        final result = await _runProcessDecoded(
           'powershell',
           [
             '-NoProfile',
@@ -151,8 +151,6 @@ class PrivilegedSession {
               ],
             ),
           ],
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
         );
         if (result.exitCode != 0) {
           return _mergeOutput(result).ifEmpty(
@@ -170,15 +168,13 @@ class PrivilegedSession {
           '2>&1',
           '&',
         ].join(' ');
-        final result = await Process.run(
+        final result = await _runProcessDecoded(
           'pkexec',
           [
             '/bin/bash',
             '-lc',
             command,
           ],
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
         );
         if (result.exitCode != 0) {
           return _mergeOutput(result).ifEmpty(
@@ -195,14 +191,12 @@ class PrivilegedSession {
           '2>&1',
           '&',
         ].join(' ');
-        final result = await Process.run(
+        final result = await _runProcessDecoded(
           'osascript',
           [
             '-e',
             'do shell script "${_appleScriptEscape(command)}" with administrator privileges',
           ],
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
         );
         if (result.exitCode != 0) {
           return _mergeOutput(result).ifEmpty(
@@ -265,10 +259,7 @@ class PrivilegedSession {
       });
       socket.writeln(payload);
       await socket.flush();
-      final raw = await utf8.decoder
-          .bind(socket)
-          .transform(const LineSplitter())
-          .first;
+      final raw = await _readSocketLine(socket);
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       if (decoded['ok'] == true) {
         return decoded;
@@ -305,14 +296,12 @@ class PrivilegedSession {
         case 'ping':
           return {'ok': true};
         case 'run_process':
-          final result = await Process.run(
+          final result = await _runProcessDecoded(
             request['command'] as String,
             (request['args'] as List? ?? const [])
                 .map((item) => '$item')
                 .toList(),
             workingDirectory: request['cwd'] as String?,
-            stdoutEncoding: utf8,
-            stderrEncoding: utf8,
           );
           return {
             'ok': true,
@@ -324,12 +313,10 @@ class PrivilegedSession {
           if (Platform.isWindows) {
             return {'ok': false, 'error': 'Shell scripts are unsupported on Windows'};
           }
-          final result = await Process.run(
+          final result = await _runProcessDecoded(
             '/bin/bash',
             ['-lc', request['script'] as String? ?? ''],
             workingDirectory: request['cwd'] as String?,
-            stdoutEncoding: utf8,
-            stderrEncoding: utf8,
           );
           return {
             'ok': true,
@@ -407,10 +394,7 @@ class PrivilegedSession {
     await for (final socket in server) {
       unawaited(() async {
         try {
-          final raw = await utf8.decoder
-              .bind(socket)
-              .transform(const LineSplitter())
-              .first;
+          final raw = await _readSocketLine(socket);
           final request =
               raw.trim().isEmpty ? <String, dynamic>{} : jsonDecode(raw) as Map<String, dynamic>;
           final response = await handle(request);
@@ -427,6 +411,88 @@ class PrivilegedSession {
 
     return 0;
   }
+}
+
+Future<String> _readSocketLine(Socket socket) async {
+  final completer = Completer<String>();
+  final buffer = <int>[];
+  StreamSubscription<List<int>>? sub;
+
+  void completeWithBuffer() {
+    if (completer.isCompleted) return;
+    var end = buffer.length;
+    if (end > 0 && buffer[end - 1] == 0x0A) {
+      end -= 1;
+    }
+    if (end > 0 && buffer[end - 1] == 0x0D) {
+      end -= 1;
+    }
+    completer.complete(utf8.decode(buffer.sublist(0, end), allowMalformed: true));
+    unawaited(sub?.cancel());
+  }
+
+  sub = socket.listen(
+    (chunk) {
+      if (completer.isCompleted) return;
+      final newlineIndex = chunk.indexOf(0x0A);
+      if (newlineIndex >= 0) {
+        buffer.addAll(chunk.take(newlineIndex + 1));
+        completeWithBuffer();
+        return;
+      }
+      buffer.addAll(chunk);
+    },
+    onError: (Object error, StackTrace stackTrace) {
+      if (!completer.isCompleted) {
+        completer.completeError(error, stackTrace);
+      }
+    },
+    onDone: completeWithBuffer,
+    cancelOnError: true,
+  );
+
+  return completer.future;
+}
+
+Encoding get _platformProcessEncoding =>
+    Platform.isWindows ? systemEncoding : utf8;
+
+Future<ProcessResult> _runProcessDecoded(
+  String command,
+  List<String> args, {
+  String? workingDirectory,
+}) async {
+  final result = await Process.run(
+    command,
+    args,
+    workingDirectory: workingDirectory,
+    stdoutEncoding: null,
+    stderrEncoding: null,
+  );
+  return ProcessResult(
+    result.pid,
+    result.exitCode,
+    _decodeProcessOutput(result.stdout),
+    _decodeProcessOutput(result.stderr),
+  );
+}
+
+String _decodeProcessOutput(Object? output) {
+  if (output == null) return '';
+  if (output is String) return output;
+  if (output is List<int>) {
+    if (output.isEmpty) return '';
+    try {
+      return _platformProcessEncoding.decode(output);
+    } catch (_) {
+      try {
+        return utf8.decode(output);
+      } catch (_) {
+        return utf8.decode(output, allowMalformed: true);
+      }
+    }
+  }
+  return output.toString();
 }
 
 class PrivilegedTrackedStartResult {

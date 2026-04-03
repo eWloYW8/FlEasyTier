@@ -326,14 +326,16 @@ Win32Window::MessageHandler(HWND hwnd,
       break;
 
     case WM_NCCALCSIZE:
-      if (UseLegacyCustomFrame() && wparam == TRUE) {
-        if (IsWindowMaximized(hwnd)) {
-          auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam);
-          HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-          MONITORINFO monitor_info{};
-          monitor_info.cbSize = sizeof(MONITORINFO);
-          if (GetMonitorInfo(monitor, &monitor_info)) {
-            params->rgrc[0] = monitor_info.rcWork;
+      if (UseLegacyCustomFrame()) {
+        if (wparam == TRUE) {
+          if (IsWindowMaximized(hwnd)) {
+            auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam);
+            HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO monitor_info{};
+            monitor_info.cbSize = sizeof(MONITORINFO);
+            if (GetMonitorInfo(monitor, &monitor_info)) {
+              params->rgrc[0] = monitor_info.rcWork;
+            }
           }
         }
         return 0;

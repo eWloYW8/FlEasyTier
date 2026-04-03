@@ -132,11 +132,17 @@ class EasyTierManager {
       ['-V'],
     ]) {
       try {
-        final result = await Process.run(
+        final rawResult = await Process.run(
           coreBinaryPath!,
           args,
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
+          stdoutEncoding: null,
+          stderrEncoding: null,
+        );
+        final result = ProcessResult(
+          rawResult.pid,
+          rawResult.exitCode,
+          _decodeProcessOutput(rawResult.stdout),
+          _decodeProcessOutput(rawResult.stderr),
         );
         final line = _firstMeaningfulLine(result);
         if (line.isNotEmpty) {
@@ -156,11 +162,17 @@ class EasyTierManager {
   Future<String?> _which(String name) async {
     try {
       final cmd = Platform.isWindows ? 'where' : 'which';
-      final result = await Process.run(
+      final rawResult = await Process.run(
         cmd,
         [name],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
+        stdoutEncoding: null,
+        stderrEncoding: null,
+      );
+      final result = ProcessResult(
+        rawResult.pid,
+        rawResult.exitCode,
+        _decodeProcessOutput(rawResult.stdout),
+        _decodeProcessOutput(rawResult.stderr),
       );
       if (result.exitCode == 0) {
         return (result.stdout as String).trim().split('\n').first.trim();
@@ -215,22 +227,14 @@ class EasyTierManager {
       _processLogs[config.id] = [];
 
       final logs = _processLogs[config.id]!;
-      process.stdout.transform(utf8.decoder).listen((data) {
-        for (final line in data.split('\n')) {
-          if (line.trim().isNotEmpty) {
-            logs.add(line.trim());
-            if (logs.length > 500) logs.removeAt(0);
-          }
-        }
-      });
-      process.stderr.transform(utf8.decoder).listen((data) {
-        for (final line in data.split('\n')) {
-          if (line.trim().isNotEmpty) {
-            logs.add('[ERR] ${line.trim()}');
-            if (logs.length > 500) logs.removeAt(0);
-          }
-        }
-      });
+      process.stdout.listen(
+        (chunk) => _appendProcessLogChunk(logs, chunk),
+        onError: (_) {},
+      );
+      process.stderr.listen(
+        (chunk) => _appendProcessLogChunk(logs, chunk, isError: true),
+        onError: (_) {},
+      );
 
       _exitSubs[config.id] = process.exitCode.asStream().listen((code) {
         _processes.remove(config.id);
@@ -655,11 +659,17 @@ class EasyTierManager {
 
   Future<bool> _commandExists(String command) async {
     try {
-      final result = await Process.run(
+      final rawResult = await Process.run(
         Platform.isWindows ? 'where' : 'which',
         [command],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
+        stdoutEncoding: null,
+        stderrEncoding: null,
+      );
+      final result = ProcessResult(
+        rawResult.pid,
+        rawResult.exitCode,
+        _decodeProcessOutput(rawResult.stdout),
+        _decodeProcessOutput(rawResult.stderr),
       );
       return result.exitCode == 0;
     } catch (_) {
@@ -670,11 +680,17 @@ class EasyTierManager {
   Future<bool> _hasUnixRootPrivileges() async {
     if (Platform.isWindows) return true;
     try {
-      final result = await Process.run(
+      final rawResult = await Process.run(
         'id',
         ['-u'],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
+        stdoutEncoding: null,
+        stderrEncoding: null,
+      );
+      final result = ProcessResult(
+        rawResult.pid,
+        rawResult.exitCode,
+        _decodeProcessOutput(rawResult.stdout),
+        _decodeProcessOutput(rawResult.stderr),
       );
       return result.exitCode == 0 && result.stdout.toString().trim() == '0';
     } catch (_) {
@@ -709,15 +725,21 @@ class EasyTierManager {
   Future<bool> _isWindowsElevated() async {
     if (!Platform.isWindows) return true;
     try {
-      final result = await Process.run(
+      final rawResult = await Process.run(
         'powershell',
         [
           '-NoProfile',
           '-Command',
           '(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
         ],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
+        stdoutEncoding: null,
+        stderrEncoding: null,
+      );
+      final result = ProcessResult(
+        rawResult.pid,
+        rawResult.exitCode,
+        _decodeProcessOutput(rawResult.stdout),
+        _decodeProcessOutput(rawResult.stderr),
       );
       return result.exitCode == 0 &&
           result.stdout.toString().trim().toLowerCase() == 'true';
@@ -1452,11 +1474,17 @@ class EasyTierManager {
       );
     }
 
-    final result = await Process.run(
+    final rawResult = await Process.run(
       command,
       args,
-      stdoutEncoding: utf8,
-      stderrEncoding: utf8,
+      stdoutEncoding: null,
+      stderrEncoding: null,
+    );
+    final result = ProcessResult(
+      rawResult.pid,
+      rawResult.exitCode,
+      _decodeProcessOutput(rawResult.stdout),
+      _decodeProcessOutput(rawResult.stderr),
     );
     if (allowPrivilegeRetry &&
         await _shouldUsePrivilegedSession() &&
@@ -1542,6 +1570,27 @@ class EasyTierManager {
   bool _isSuccessMessage(String msg) {
     final lower = msg.toLowerCase();
     return !lower.startsWith('failed');
+  }
+
+  Encoding get _platformProcessEncoding =>
+      Platform.isWindows ? systemEncoding : utf8;
+
+  String _decodeProcessOutput(Object? output) {
+    if (output == null) return '';
+    if (output is String) return output;
+    if (output is List<int>) {
+      if (output.isEmpty) return '';
+      try {
+        return _platformProcessEncoding.decode(output);
+      } catch (_) {
+        try {
+          return utf8.decode(output);
+        } catch (_) {
+          return utf8.decode(output, allowMalformed: true);
+        }
+      }
+    }
+    return output.toString();
   }
 
   List<String> _serviceCliArgs(NetworkConfig config) {
@@ -1717,6 +1766,22 @@ class EasyTierManager {
       return withoutAnsi.substring(6).trim();
     }
     return withoutAnsi;
+  }
+
+  void _appendProcessLogChunk(
+    List<String> logs,
+    List<int> chunk, {
+    bool isError = false,
+  }) {
+    final text = _decodeProcessOutput(chunk);
+    for (final line in text.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      logs.add(isError ? '[ERR] $trimmed' : trimmed);
+      if (logs.length > 500) {
+        logs.removeAt(0);
+      }
+    }
   }
 }
 
