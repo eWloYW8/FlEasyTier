@@ -370,6 +370,12 @@ class EasyTierManager {
         return 'wintun.dll was not found next to easytier-core.exe';
       }
     }
+    if (Platform.isWindows) {
+      final hasPacketDll = await _hasPacketDll();
+      if (!hasPacketDll) {
+        return 'Packet.dll was not found next to easytier-core.exe';
+      }
+    }
 
     if (Platform.isLinux && !config.noTun && !config.useSmoltcp) {
       final isRoot = await _hasUnixRootPrivileges();
@@ -689,6 +695,15 @@ class EasyTierManager {
     if (idx < 0) return false;
     final dir = normalized.substring(0, idx);
     return File('$dir\\wintun.dll').exists();
+  }
+
+  Future<bool> _hasPacketDll() async {
+    if (!Platform.isWindows || coreBinaryPath == null) return true;
+    final normalized = coreBinaryPath!.replaceAll('/', '\\');
+    final idx = normalized.lastIndexOf('\\');
+    if (idx < 0) return false;
+    final dir = normalized.substring(0, idx);
+    return File('$dir\\Packet.dll').exists();
   }
 
   Future<bool> _isWindowsElevated() async {

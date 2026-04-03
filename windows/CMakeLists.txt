@@ -172,10 +172,33 @@ fleasytier_enable_yy_thunks(${BINARY_NAME})
 set(REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(EASYTIER_EMBED_DIR "${PROJECT_BINARY_DIR}/embedded")
 set(EASYTIER_CORE_FILE "${EASYTIER_EMBED_DIR}/easytier-core.exe")
-set(EASYTIER_WINTUN_FILE "${EASYTIER_EMBED_DIR}/wintun.dll")
+set(EASYTIER_BUNDLE_SOURCE_DIR
+  "${REPO_ROOT_DIR}/third_party/EasyTier/easytier/third_party/x86_64"
+)
+
+if(NOT EXISTS "${EASYTIER_BUNDLE_SOURCE_DIR}")
+  message(FATAL_ERROR
+    "EasyTier bundled runtime directory was not found at ${EASYTIER_BUNDLE_SOURCE_DIR}"
+  )
+endif()
+
+file(GLOB EASYTIER_BUNDLE_SOURCE_FILES "${EASYTIER_BUNDLE_SOURCE_DIR}/*")
+if(NOT EASYTIER_BUNDLE_SOURCE_FILES)
+  message(FATAL_ERROR
+    "EasyTier bundled runtime directory is empty: ${EASYTIER_BUNDLE_SOURCE_DIR}"
+  )
+endif()
+
+set(EASYTIER_BUNDLE_OUTPUT_FILES "")
+foreach(EASYTIER_BUNDLE_SOURCE_FILE IN LISTS EASYTIER_BUNDLE_SOURCE_FILES)
+  get_filename_component(EASYTIER_BUNDLE_FILE_NAME "${EASYTIER_BUNDLE_SOURCE_FILE}" NAME)
+  list(APPEND EASYTIER_BUNDLE_OUTPUT_FILES
+    "${EASYTIER_EMBED_DIR}/${EASYTIER_BUNDLE_FILE_NAME}"
+  )
+endforeach()
 
 add_custom_command(
-  OUTPUT "${EASYTIER_CORE_FILE}" "${EASYTIER_WINTUN_FILE}"
+  OUTPUT "${EASYTIER_CORE_FILE}" ${EASYTIER_BUNDLE_OUTPUT_FILES}
   COMMAND powershell
     -NoProfile
     -ExecutionPolicy Bypass
@@ -185,12 +208,13 @@ add_custom_command(
   DEPENDS
     "${REPO_ROOT_DIR}/tool/prepare_easytier.ps1"
     "${REPO_ROOT_DIR}/third_party/EasyTier/.git"
-  COMMENT "Building bundled easytier-core and wintun"
+    ${EASYTIER_BUNDLE_SOURCE_FILES}
+  COMMENT "Building bundled easytier-core and embedding EasyTier x86_64 runtime files"
   VERBATIM
 )
 
 add_custom_target(embedded_easytier ALL
-  DEPENDS "${EASYTIER_CORE_FILE}" "${EASYTIER_WINTUN_FILE}"
+  DEPENDS "${EASYTIER_CORE_FILE}" ${EASYTIER_BUNDLE_OUTPUT_FILES}
 )
 
 add_dependencies(${BINARY_NAME} embedded_easytier)
@@ -260,5 +284,7 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 
 install(FILES "${EASYTIER_CORE_FILE}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
-install(FILES "${EASYTIER_WINTUN_FILE}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
-  COMPONENT Runtime)
+foreach(EASYTIER_BUNDLE_OUTPUT_FILE IN LISTS EASYTIER_BUNDLE_OUTPUT_FILES)
+  install(FILES "${EASYTIER_BUNDLE_OUTPUT_FILE}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+endforeach()

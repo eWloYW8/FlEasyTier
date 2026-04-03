@@ -1,6 +1,6 @@
 /// Platform-specific VPN service integration.
 ///
-/// - **Windows**: Requires admin elevation (manifest) + wintun.dll
+/// - **Windows**: Requires admin elevation (manifest) + wintun.dll + Packet.dll
 /// - **Android**: Uses VpnService via platform channel
 /// - **macOS**: Requires network entitlements
 /// - **Linux**: Requires root or CAP_NET_ADMIN
@@ -84,10 +84,10 @@ class PlatformVpn {
     if (Platform.isWindows) {
       return 'Windows requires:\n'
           '  1. wintun.dll next to easytier-core.exe\n'
-          '     Download from https://www.wintun.net/\n'
-          '  2. easytier-core runs with admin privileges\n'
+          '  2. Packet.dll next to easytier-core.exe\n'
+          '  3. easytier-core runs with admin privileges\n'
           '     Run FlEasyTier as Administrator when TUN mode is enabled\n'
-          '  3. Or enable No TUN / Use smoltcp for user-space mode';
+          '  4. Or enable No TUN / Use smoltcp for user-space mode';
     }
     if (Platform.isAndroid) {
       return 'Android uses the system VPN API.\n'
@@ -114,5 +114,13 @@ class PlatformVpn {
     final exe = Platform.resolvedExecutable;
     final dir = exe.substring(0, exe.lastIndexOf('\\'));
     return File('$dir\\wintun.dll').exists();
+  }
+
+  /// Whether Packet.dll is present (Windows only).
+  static Future<bool> checkPacketDll() async {
+    if (!Platform.isWindows) return true;
+    final exe = Platform.resolvedExecutable;
+    final dir = exe.substring(0, exe.lastIndexOf('\\'));
+    return File('$dir\\Packet.dll').exists();
   }
 }

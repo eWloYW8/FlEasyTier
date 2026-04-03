@@ -18,6 +18,7 @@ $outputDirPath = [System.IO.Path]::GetFullPath($outputDirInput)
 $easyTierRoot = Join-Path $repoRootPath 'third_party\EasyTier'
 $crateDir = Join-Path $easyTierRoot 'easytier'
 $targetBin = Join-Path $easyTierRoot 'target\release\easytier-core.exe'
+$bundleDir = Join-Path $crateDir 'third_party\x86_64'
 
 if (!(Test-Path $crateDir)) {
   throw "EasyTier submodule not found at $crateDir"
@@ -37,29 +38,15 @@ if (!(Test-Path $targetBin)) {
 }
 
 Copy-Item $targetBin (Join-Path $outputDirPath 'easytier-core.exe') -Force
-
-$cacheDir = Join-Path $repoRootPath '.dart_tool\embedded_tools\wintun'
-New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
-
-$version = '0.14.1'
-$zipPath = Join-Path $cacheDir "wintun-$version.zip"
-$extractDir = Join-Path $cacheDir "wintun-$version"
-$downloadUrl = "https://www.wintun.net/builds/wintun-$version.zip"
-
-if (!(Test-Path $zipPath)) {
-  Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath
+if (!(Test-Path $bundleDir)) {
+  throw "EasyTier bundled runtime directory not found at $bundleDir"
 }
 
-if (!(Test-Path $extractDir)) {
-  Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+$bundleFiles = Get-ChildItem -Path $bundleDir -File
+if ($bundleFiles.Count -eq 0) {
+  throw "No bundled runtime files found in $bundleDir"
 }
 
-$wintunDll = Get-ChildItem -Path $extractDir -Recurse -Filter 'wintun.dll' |
-  Where-Object { $_.FullName -match '(amd64|x64)' } |
-  Select-Object -First 1
-
-if ($null -eq $wintunDll) {
-  throw "Unable to locate amd64 wintun.dll in $extractDir"
+foreach ($bundleFile in $bundleFiles) {
+  Copy-Item $bundleFile.FullName (Join-Path $outputDirPath $bundleFile.Name) -Force
 }
-
-Copy-Item $wintunDll.FullName (Join-Path $outputDirPath 'wintun.dll') -Force

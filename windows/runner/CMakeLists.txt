@@ -40,11 +40,20 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
 set(EASYTIER_EMBED_DIR "${CMAKE_BINARY_DIR}/embedded")
+file(GLOB EASYTIER_BUNDLE_SOURCE_FILES
+  "${CMAKE_SOURCE_DIR}/../third_party/EasyTier/easytier/third_party/x86_64/*"
+)
 add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${EASYTIER_EMBED_DIR}/easytier-core.exe"
     "$<TARGET_FILE_DIR:${BINARY_NAME}>/easytier-core.exe"
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${EASYTIER_EMBED_DIR}/wintun.dll"
-    "$<TARGET_FILE_DIR:${BINARY_NAME}>/wintun.dll"
 )
+
+foreach(EASYTIER_BUNDLE_SOURCE_FILE IN LISTS EASYTIER_BUNDLE_SOURCE_FILES)
+  get_filename_component(EASYTIER_BUNDLE_FILE_NAME "${EASYTIER_BUNDLE_SOURCE_FILE}" NAME)
+  add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${EASYTIER_EMBED_DIR}/${EASYTIER_BUNDLE_FILE_NAME}"
+      "$<TARGET_FILE_DIR:${BINARY_NAME}>/${EASYTIER_BUNDLE_FILE_NAME}"
+  )
+endforeach()
