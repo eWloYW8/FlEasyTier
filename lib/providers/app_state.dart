@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_language.dart';
 import '../models/app_log_entry.dart';
 import '../models/network_config.dart';
 import '../models/network_instance.dart';
@@ -25,6 +26,7 @@ class AppState extends ChangeNotifier {
   List<NetworkConfig> _configs = [];
   final Map<String, NetworkInstance> _instances = {};
   String? _selectedConfigId;
+  AppLanguage _language = AppLanguage.system;
   ThemeMode _themeMode = ThemeMode.system;
   Color _seedColor = const Color(0xFF00897B);
   DynamicSchemeVariant _schemeVariant = DynamicSchemeVariant.tonalSpot;
@@ -37,6 +39,12 @@ class AppState extends ChangeNotifier {
   List<NetworkConfig> get configs => _configs;
   Map<String, NetworkInstance> get instances => _instances;
   String? get selectedConfigId => _selectedConfigId;
+  AppLanguage get language => _language;
+  Locale? get locale => switch (_language) {
+    AppLanguage.system => null,
+    AppLanguage.english => const Locale('en'),
+    AppLanguage.chinese => const Locale('zh'),
+  };
   ThemeMode get themeMode => _themeMode;
   Color get seedColor => _seedColor;
   DynamicSchemeVariant get schemeVariant => _schemeVariant;
@@ -79,6 +87,7 @@ class AppState extends ChangeNotifier {
     _manager.coreBinaryPath = canEditCoreBinaryPath
         ? _normalizeBinaryPath(settings['core_binary_path'] as String?)
         : null;
+    _language = AppLanguage.fromName(settings['language'] as String?);
     _themeMode =
         ThemeMode.values.elementAtOrNull(settings['theme_mode'] as int? ?? 0) ??
         ThemeMode.system;
@@ -656,7 +665,8 @@ class AppState extends ChangeNotifier {
     final instanceName = status['instanceName'] as String?;
     final errorMessage = _normalizeAndroidError(status['errorMessage']);
     final infoJson = status['infoJson'] as String?;
-    final logs = (status['logs'] as List?)
+    final logs =
+        (status['logs'] as List?)
             ?.map((item) => item.toString())
             .where((item) => item.trim().isNotEmpty)
             .toList() ??
@@ -771,6 +781,12 @@ class AppState extends ChangeNotifier {
       'Theme mode changed to ${mode.name}',
       category: 'UI',
     );
+    unawaited(_saveSettings());
+    notifyListeners();
+  }
+
+  void setLanguage(AppLanguage language) {
+    _language = language;
     unawaited(_saveSettings());
     notifyListeners();
   }
@@ -1015,6 +1031,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _saveSettings() => _storage.saveSettings({
     'core_binary_path': _manager.coreBinaryPath,
+    'language': _language.name,
     'theme_mode': _themeMode.index,
     'seed_color': _seedColor.toARGB32(),
     'scheme_variant': _schemeVariant.index,

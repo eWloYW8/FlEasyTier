@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/network_config.dart';
 import '../models/network_instance.dart';
 import 'status_badge.dart';
@@ -24,12 +25,13 @@ class NetworkTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
+    final l10n = context.l10n;
     final traffic = _trafficSummary(instance);
     final nodeSummary = running
-        ? '${instance?.peerCount ?? 0} nodes'
+        ? l10n.t('tile.nodes', {'count': '${instance?.peerCount ?? 0}'})
         : config.virtualIpv4.isNotEmpty
-            ? config.virtualIpv4
-            : (config.dhcp ? 'DHCP' : 'Idle');
+        ? config.virtualIpv4
+        : (config.dhcp ? l10n.t('tile.dhcp') : l10n.t('tile.idle'));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -79,18 +81,19 @@ class NetworkTile extends StatelessWidget {
                                   runSpacing: 4,
                                   children: [
                                     if (config.serviceEnabled)
-                                      const _TinyChip(
-                                        label: 'Service',
-                                        icon: Icons.miscellaneous_services_outlined,
+                                      _TinyChip(
+                                        label: l10n.t('tile.service'),
+                                        icon: Icons
+                                            .miscellaneous_services_outlined,
                                       ),
                                     if (config.autoStart)
-                                      const _TinyChip(
-                                        label: 'Auto',
+                                      _TinyChip(
+                                        label: l10n.t('tile.auto'),
                                         icon: Icons.schedule_outlined,
                                       ),
                                     if (config.acceptDns)
-                                      const _TinyChip(
-                                        label: 'DNS',
+                                      _TinyChip(
+                                        label: l10n.t('tile.dns'),
                                         icon: Icons.dns_outlined,
                                       ),
                                     if (config.enableSocks5)
@@ -99,8 +102,8 @@ class NetworkTile extends StatelessWidget {
                                         icon: Icons.route_outlined,
                                       ),
                                     if (config.noTun)
-                                      const _TinyChip(
-                                        label: 'No TUN',
+                                      _TinyChip(
+                                        label: l10n.t('tile.no_tun'),
                                         icon: Icons.link_off_outlined,
                                       ),
                                     if (config.useSmoltcp)
@@ -204,10 +207,7 @@ class _MetaText extends StatelessWidget {
 }
 
 class _TinyChip extends StatelessWidget {
-  const _TinyChip({
-    required this.label,
-    required this.icon,
-  });
+  const _TinyChip({required this.label, required this.icon});
 
   final String label;
   final IconData icon;

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/network_config.dart';
 import '../models/network_instance.dart';
 import '../providers/app_state.dart';
@@ -24,7 +25,7 @@ class NetworkDetailScreen extends StatelessWidget {
     final state = context.watch<AppState>();
     final config = state.configById(configId);
     if (config == null) {
-      return const Center(child: Text('Config not found'));
+      return Center(child: Text(context.l10n.t('detail.config_not_found')));
     }
 
     final running = state.isRunning(configId);
@@ -69,11 +70,12 @@ class _HeaderCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(config.displayName,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                Text(
+                  config.displayName,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
@@ -82,22 +84,28 @@ class _HeaderCard extends StatelessWidget {
                   children: [
                     StatusBadge(running: running),
                     if (running && instance?.nodeInfo != null)
-                      Text(instance!.nodeInfo!.virtualIpv4,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: cs.outline)),
+                      Text(
+                        instance!.nodeInfo!.virtualIpv4,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: cs.outline),
+                      ),
                     if (running && instance != null)
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.people_outline, size: 14, color: cs.outline),
+                          Icon(
+                            Icons.people_outline,
+                            size: 14,
+                            color: cs.outline,
+                          ),
                           const SizedBox(width: 2),
-                          Text('${instance!.peerCount}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: cs.outline)),
+                          Text(
+                            '${instance!.peerCount}',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(color: cs.outline),
+                          ),
                         ],
                       ),
                   ],
@@ -112,7 +120,7 @@ class _HeaderCard extends StatelessWidget {
               if (!running)
                 IconButton(
                   icon: const Icon(Icons.edit_outlined),
-                  tooltip: 'Edit',
+                  tooltip: context.l10n.t('detail.edit'),
                   onPressed: () => _editConfig(context, config),
                 ),
               if (!running) const SizedBox(width: 4),
@@ -154,10 +162,7 @@ class _HeaderCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: actions,
-                      ),
+                      Align(alignment: Alignment.centerRight, child: actions),
                     ],
                   )
                 : Row(
@@ -204,7 +209,11 @@ class _StartStopButton extends StatelessWidget {
     if (running) {
       return FilledButton.tonalIcon(
         icon: const Icon(Icons.stop_rounded, size: 20),
-        label: Text(serviceEnabled ? 'Stop Service' : 'Stop'),
+        label: Text(
+          serviceEnabled
+              ? context.l10n.t('detail.stop_service')
+              : context.l10n.t('common.stop'),
+        ),
         style: FilledButton.styleFrom(
           foregroundColor: Theme.of(context).colorScheme.error,
         ),
@@ -213,7 +222,11 @@ class _StartStopButton extends StatelessWidget {
     }
     return FilledButton.icon(
       icon: const Icon(Icons.play_arrow_rounded, size: 20),
-      label: Text(serviceEnabled ? 'Start Service' : 'Start'),
+      label: Text(
+        serviceEnabled
+            ? context.l10n.t('detail.start_service')
+            : context.l10n.t('common.start'),
+      ),
       onPressed: onPressed,
     );
   }
@@ -251,10 +264,22 @@ class _MoreMenu extends StatelessWidget {
       },
       itemBuilder: (_) => [
         if (!running)
-          const PopupMenuItem(value: 'edit', child: Text('Edit')),
-        const PopupMenuItem(value: 'toml', child: Text('Edit TOML')),
-        const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-        const PopupMenuItem(value: 'delete', child: Text('Delete')),
+          PopupMenuItem(
+            value: 'edit',
+            child: Text(context.l10n.t('common.edit')),
+          ),
+        PopupMenuItem(
+          value: 'toml',
+          child: Text(context.l10n.t('networks.edit_toml')),
+        ),
+        PopupMenuItem(
+          value: 'duplicate',
+          child: Text(context.l10n.t('common.duplicate')),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text(context.l10n.t('common.delete')),
+        ),
       ],
     );
   }
@@ -273,12 +298,12 @@ class _RunningView extends StatelessWidget {
       length: 4,
       child: Column(
         children: [
-          const TabBar(
+          TabBar(
             tabs: [
-              Tab(text: 'Overview'),
-              Tab(text: 'Peers'),
-              Tab(text: 'Routes'),
-              Tab(text: 'Logs'),
+              Tab(text: context.l10n.t('detail.overview')),
+              Tab(text: context.l10n.t('detail.peers')),
+              Tab(text: context.l10n.t('detail.routes')),
+              Tab(text: context.l10n.t('detail.logs')),
             ],
           ),
           Expanded(
@@ -315,6 +340,7 @@ class _OverviewTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final node = instance.nodeInfo;
     final uptime = instance.uptime;
+    final l10n = context.l10n;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -328,43 +354,47 @@ class _OverviewTab extends StatelessWidget {
             children: [
               StatCard(
                 icon: Icons.router,
-                label: 'Virtual IP',
-                value: node?.virtualIpv4 ?? 'Connecting...',
+                label: l10n.t('detail.virtual_ip'),
+                value: node?.virtualIpv4 ?? l10n.t('detail.connecting'),
               ),
               StatCard(
                 icon: Icons.people,
-                label: 'Peers',
+                label: l10n.t('detail.peers'),
                 value: '${instance.peerCount}',
               ),
               StatCard(
                 icon: Icons.alt_route,
-                label: 'Routes',
+                label: l10n.t('detail.routes'),
                 value: '${instance.routes.length}',
               ),
               StatCard(
                 icon: Icons.timer_outlined,
-                label: 'Uptime',
-                value: _formatDuration(uptime),
+                label: l10n.t('detail.uptime'),
+                value: _formatDuration(context, uptime),
               ),
               StatCard(
                 icon: Icons.download,
-                label: 'RX',
+                label: l10n.t('detail.rx'),
                 value: _formatBytes(instance.totalRxBytes),
               ),
               StatCard(
                 icon: Icons.upload,
-                label: 'TX',
+                label: l10n.t('detail.tx'),
                 value: _formatBytes(instance.totalTxBytes),
               ),
               StatCard(
                 icon: Icons.forward,
-                label: 'Forwarded',
-                value: _formatBytes(instance.metricValue('traffic_bytes_forwarded')),
+                label: l10n.t('detail.forwarded'),
+                value: _formatBytes(
+                  instance.metricValue('traffic_bytes_forwarded'),
+                ),
               ),
               StatCard(
                 icon: Icons.compress,
-                label: 'Compressed',
-                value: _formatBytes(instance.metricValue('compression_bytes_tx_after')),
+                label: l10n.t('detail.compressed'),
+                value: _formatBytes(
+                  instance.metricValue('compression_bytes_tx_after'),
+                ),
               ),
             ],
           ),
@@ -384,16 +414,18 @@ class _OverviewTab extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    Icon(Icons.error_outline,
-                        color:
-                            Theme.of(context).colorScheme.onErrorContainer),
+                    Icon(
+                      Icons.error_outline,
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(instance.errorMessage!,
-                          style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onErrorContainer)),
+                      child: Text(
+                        instance.errorMessage!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onErrorContainer,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -406,38 +438,47 @@ class _OverviewTab extends StatelessWidget {
   }
 
   Widget _nodeInfoCard(BuildContext context, NodeInfo node) {
+    final l10n = context.l10n;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Node Info',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w600)),
+            Text(
+              l10n.t('detail.node_info'),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
-            _infoRow('Hostname', node.hostname),
-            _infoRow('Peer ID', '${node.peerId}'),
+            _infoRow(l10n.t('detail.hostname'), node.hostname),
+            _infoRow(l10n.t('detail.peer_id'), '${node.peerId}'),
             if (node.virtualIpv4Cidr.isNotEmpty)
-              _infoRow('IPv4 CIDR', node.virtualIpv4Cidr),
-            _infoRow('Version', node.version),
-            if (node.instId.isNotEmpty) _infoRow('Inst ID', node.instId),
+              _infoRow(l10n.t('detail.ipv4_cidr'), node.virtualIpv4Cidr),
+            _infoRow(l10n.t('detail.version'), node.version),
+            if (node.instId.isNotEmpty)
+              _infoRow(l10n.t('detail.inst_id'), node.instId),
             if (node.udpNatType.isNotEmpty)
-              _infoRow('UDP NAT', node.udpNatType),
+              _infoRow(l10n.t('detail.udp_nat'), node.udpNatType),
             if (node.tcpNatType.isNotEmpty)
-              _infoRow('TCP NAT', node.tcpNatType),
+              _infoRow(l10n.t('detail.tcp_nat'), node.tcpNatType),
             if (node.publicIps.isNotEmpty)
-              _infoRow('Public IP', node.publicIps.join(', ')),
+              _infoRow(l10n.t('detail.public_ip'), node.publicIps.join(', ')),
             if (node.publicIpv6.isNotEmpty)
-              _infoRow('Public IPv6', node.publicIpv6),
+              _infoRow(l10n.t('detail.public_ipv6'), node.publicIpv6),
             if (node.interfaceIpv4s.isNotEmpty)
-              _infoRow('Interface IPv4', node.interfaceIpv4s.join(', ')),
+              _infoRow(
+                l10n.t('detail.interface_ipv4'),
+                node.interfaceIpv4s.join(', '),
+              ),
             if (node.interfaceIpv6s.isNotEmpty)
-              _infoRow('Interface IPv6', node.interfaceIpv6s.join(', ')),
+              _infoRow(
+                l10n.t('detail.interface_ipv6'),
+                node.interfaceIpv6s.join(', '),
+              ),
             if (node.listeners.isNotEmpty)
-              _infoRow('Listeners', node.listeners.join('\n')),
+              _infoRow(l10n.t('detail.listeners'), node.listeners.join('\n')),
           ],
         ),
       ),
@@ -445,17 +486,19 @@ class _OverviewTab extends StatelessWidget {
   }
 
   Widget _trafficMetricsCard(BuildContext context, NetworkInstance instance) {
+    final l10n = context.l10n;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Traffic Metrics',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w600)),
+            Text(
+              l10n.t('detail.traffic_metrics'),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -463,37 +506,41 @@ class _OverviewTab extends StatelessWidget {
               children: [
                 _metricBox(
                   context,
-                  'Data TX',
+                  l10n.t('detail.data_tx'),
                   _formatBytes(instance.metricValue('traffic_bytes_tx')),
                   Icons.upload_rounded,
                 ),
                 _metricBox(
                   context,
-                  'Data RX',
+                  l10n.t('detail.data_rx'),
                   _formatBytes(instance.metricValue('traffic_bytes_rx')),
                   Icons.download_rounded,
                 ),
                 _metricBox(
                   context,
-                  'Control TX',
-                  _formatBytes(instance.metricValue('traffic_control_bytes_tx')),
+                  l10n.t('detail.control_tx'),
+                  _formatBytes(
+                    instance.metricValue('traffic_control_bytes_tx'),
+                  ),
                   Icons.settings_ethernet,
                 ),
                 _metricBox(
                   context,
-                  'Control RX',
-                  _formatBytes(instance.metricValue('traffic_control_bytes_rx')),
+                  l10n.t('detail.control_rx'),
+                  _formatBytes(
+                    instance.metricValue('traffic_control_bytes_rx'),
+                  ),
                   Icons.call_received_rounded,
                 ),
                 _metricBox(
                   context,
-                  'RPC TX',
+                  l10n.t('detail.rpc_tx'),
                   '${instance.metricValue('peer_rpc_client_tx')}',
                   Icons.sync_alt_rounded,
                 ),
                 _metricBox(
                   context,
-                  'RPC RX',
+                  l10n.t('detail.rpc_rx'),
                   '${instance.metricValue('peer_rpc_client_rx')}',
                   Icons.compare_arrows_rounded,
                 ),
@@ -537,16 +584,21 @@ class _OverviewTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(label,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: cs.outline,
-                      fontWeight: FontWeight.w500,
-                    )),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: cs.outline,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -566,13 +618,13 @@ class _OverviewTab extends StatelessWidget {
         children: [
           SizedBox(
             width: 100,
-            child: Text(label,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w500, fontSize: 13)),
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+            ),
           ),
           Expanded(
-            child: SelectableText(value,
-                style: const TextStyle(fontSize: 13)),
+            child: SelectableText(value, style: const TextStyle(fontSize: 13)),
           ),
         ],
       ),
@@ -608,20 +660,22 @@ class _LogsTabState extends State<_LogsTab> {
     final config = state.configById(widget.configId);
     final allLogs = state.manager.getLogs(widget.configId, config: config);
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
 
     final logs = _filter.isEmpty
         ? allLogs
         : allLogs
-            .where((l) =>
-                stripAnsi(l).toLowerCase().contains(_filter.toLowerCase()))
-            .toList();
+              .where(
+                (l) =>
+                    stripAnsi(l).toLowerCase().contains(_filter.toLowerCase()),
+              )
+              .toList();
 
     // Only scroll when new lines actually appeared, not on every rebuild.
     if (_autoScroll && logs.length > _prevLogCount && logs.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
-          _scrollController
-              .jumpTo(_scrollController.position.maxScrollExtent);
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
         }
       });
     }
@@ -638,16 +692,20 @@ class _LogsTabState extends State<_LogsTab> {
                 child: TextField(
                   controller: _filterController,
                   style: TextStyle(
-                      fontSize: 12,
-                      color: cs.onSurface,
-                      fontFamily: 'monospace'),
+                    fontSize: 12,
+                    color: cs.onSurface,
+                    fontFamily: 'monospace',
+                  ),
                   decoration: InputDecoration(
-                    hintText: 'Filter logs...',
-                    prefixIcon:
-                        Icon(Icons.search, size: 18, color: cs.outline),
+                    hintText: l10n.t('detail.filter_logs'),
+                    prefixIcon: Icon(Icons.search, size: 18, color: cs.outline),
                     suffixIcon: _filter.isNotEmpty
                         ? IconButton(
-                            icon: Icon(Icons.close, size: 16, color: cs.outline),
+                            icon: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: cs.outline,
+                            ),
                             onPressed: () {
                               _filterController.clear();
                               setState(() => _filter = '');
@@ -656,16 +714,22 @@ class _LogsTabState extends State<_LogsTab> {
                         : null,
                     border: const OutlineInputBorder(),
                     isDense: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   onChanged: (v) => setState(() => _filter = v),
                 ),
               ),
               const SizedBox(width: 8),
               IconButton(
-                icon: Icon(Icons.copy_all_outlined, size: 20, color: cs.outline),
-                tooltip: 'Copy Logs',
+                icon: Icon(
+                  Icons.copy_all_outlined,
+                  size: 20,
+                  color: cs.outline,
+                ),
+                tooltip: context.l10n.t('common.copy'),
                 onPressed: logs.isEmpty
                     ? null
                     : () async {
@@ -674,8 +738,8 @@ class _LogsTabState extends State<_LogsTab> {
                         );
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Logs copied'),
+                          SnackBar(
+                            content: Text(l10n.t('detail.logs_copied')),
                             behavior: SnackBarBehavior.floating,
                           ),
                         );
@@ -688,12 +752,16 @@ class _LogsTabState extends State<_LogsTab> {
                       : Icons.vertical_align_top,
                   size: 20,
                 ),
-                tooltip: _autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF',
+                tooltip: _autoScroll
+                    ? l10n.t('detail.auto_scroll_on')
+                    : l10n.t('detail.auto_scroll_off'),
                 onPressed: () => setState(() => _autoScroll = !_autoScroll),
                 color: _autoScroll ? cs.primary : cs.outline,
               ),
-              Text('${logs.length}',
-                  style: TextStyle(fontSize: 11, color: cs.outline)),
+              Text(
+                '${logs.length}',
+                style: TextStyle(fontSize: 11, color: cs.outline),
+              ),
             ],
           ),
         ),
@@ -790,6 +858,7 @@ class _StoppedView extends StatelessWidget {
     final state = context.watch<AppState>();
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
+    final l10n = context.l10n;
     final instance = state.instanceFor(config.id);
     final recentLogs = state.manager.getLogs(config.id, config: config);
     final recentTail = recentLogs.length > 10
@@ -810,7 +879,7 @@ class _StoppedView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Last Start Error',
+                      context.l10n.t('detail.last_start_error'),
                       style: ts.titleSmall?.copyWith(
                         color: cs.onErrorContainer,
                         fontWeight: FontWeight.w600,
@@ -831,80 +900,127 @@ class _StoppedView extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Configuration',
-                      style:
-                          ts.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                    l10n.t('detail.configuration_summary'),
+                    style: ts.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  ),
                   const Divider(height: 24),
-                  _row(cs, 'Network', config.networkName),
-                  _row(cs, 'Secret',
-                      config.networkSecret.isNotEmpty ? '\u2022' * 8 : '-'),
+                  _row(cs, l10n.t('detail.network'), config.networkName),
                   _row(
-                      cs,
-                      'IPv4',
-                      config.virtualIpv4.isNotEmpty
-                          ? config.virtualIpv4
-                          : (config.dhcp ? 'DHCP' : '-')),
+                    cs,
+                    context.l10n.t('detail.secret'),
+                    config.networkSecret.isNotEmpty ? '\u2022' * 8 : '-',
+                  ),
+                  _row(
+                    cs,
+                    l10n.t('detail.ipv4'),
+                    config.virtualIpv4.isNotEmpty
+                        ? config.virtualIpv4
+                        : (config.dhcp ? l10n.t('tile.dhcp') : '-'),
+                  ),
                   if (config.virtualIpv6.isNotEmpty)
-                    _row(cs, 'IPv6', config.virtualIpv6),
-                  _row(cs, 'Hostname',
-                      config.hostname.isNotEmpty ? config.hostname : '-'),
-                  if (config.instanceName.isNotEmpty)
-                    _row(cs, 'Instance', config.instanceName),
-                  _row(cs, 'Peers', '${config.peerUrls.length} configured'),
+                    _row(cs, l10n.t('detail.ipv6'), config.virtualIpv6),
                   _row(
-                      cs,
-                      'Listeners',
-                      config.noListener
-                          ? 'Disabled'
-                          : '${config.listeners.length} configured'),
+                    cs,
+                    l10n.t('detail.hostname'),
+                    config.hostname.isNotEmpty ? config.hostname : '-',
+                  ),
+                  if (config.instanceName.isNotEmpty)
+                    _row(cs, l10n.t('detail.instance'), config.instanceName),
+                  _row(
+                    cs,
+                    l10n.t('detail.peers'),
+                    l10n.t('detail.configured_count', {
+                      'count': '${config.peerUrls.length}',
+                    }),
+                  ),
+                  _row(
+                    cs,
+                    l10n.t('detail.listeners'),
+                    config.noListener
+                        ? l10n.t('detail.disabled')
+                        : l10n.t('detail.configured_count', {
+                            'count': '${config.listeners.length}',
+                          }),
+                  ),
                   if (config.mappedListeners.isNotEmpty)
-                    _row(cs, 'Mapped', '${config.mappedListeners.length}'),
-                  _row(cs, 'RPC Port', '${config.rpcPort}'),
+                    _row(
+                      cs,
+                      l10n.t('detail.mapped'),
+                      '${config.mappedListeners.length}',
+                    ),
+                  _row(cs, l10n.t('detail.rpc_port'), '${config.rpcPort}'),
                   if (config.proxyCidrs.isNotEmpty)
-                    _row(cs, 'Proxy CIDRs', config.proxyCidrs.join(', ')),
+                    _row(
+                      cs,
+                      l10n.t('detail.proxy_cidrs'),
+                      config.proxyCidrs.join(', '),
+                    ),
                   if (config.exitNodes.isNotEmpty)
-                    _row(cs, 'Exit Nodes', config.exitNodes.join(', ')),
+                    _row(
+                      cs,
+                      l10n.t('detail.exit_nodes'),
+                      config.exitNodes.join(', '),
+                    ),
                   if (config.manualRoutes.isNotEmpty)
-                    _row(cs, 'Routes', '${config.manualRoutes.length}'),
+                    _row(
+                      cs,
+                      l10n.t('detail.routes'),
+                      '${config.manualRoutes.length}',
+                    ),
                   if (config.portForwards.isNotEmpty)
-                    _row(cs, 'Port Fwd', '${config.portForwards.length} rules'),
+                    _row(
+                      cs,
+                      l10n.t('detail.port_forward'),
+                      l10n.t('detail.rule_count', {
+                        'count': '${config.portForwards.length}',
+                      }),
+                    ),
                   if (config.vpnPortal.isNotEmpty)
-                    _row(cs, 'WG Portal', config.vpnPortal),
+                    _row(cs, l10n.t('detail.wg_portal'), config.vpnPortal),
                   if (config.compression.isNotEmpty)
-                    _row(cs, 'Compression', config.compression),
-                  if (_supportsSystemService)
-                    ...[
-                      const SizedBox(height: 16),
-                      _ServiceSection(config: config),
-                    ],
+                    _row(cs, l10n.t('detail.compression'), config.compression),
+                  if (_supportsSystemService) ...[
+                    const SizedBox(height: 16),
+                    _ServiceSection(config: config),
+                  ],
                   const SizedBox(height: 4),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
                     children: [
-                      if (config.dhcp) _chip(cs, 'DHCP'),
+                      if (config.dhcp) _chip(cs, l10n.t('tile.dhcp')),
                       if (config.enableKcpProxy) _chip(cs, 'KCP'),
                       if (config.enableQuicProxy) _chip(cs, 'QUIC'),
-                      if (!config.disableIpv6) _chip(cs, 'IPv6'),
-                      if (config.latencyFirst) _chip(cs, 'Latency First'),
-                      if (config.enableExitNode) _chip(cs, 'Exit Node'),
-                      if (config.acceptDns) _chip(cs, 'DNS'),
+                      if (!config.disableIpv6) _chip(cs, l10n.t('detail.ipv6')),
+                      if (config.latencyFirst)
+                        _chip(cs, l10n.t('detail.latency_first')),
+                      if (config.enableExitNode)
+                        _chip(cs, l10n.t('detail.exit_node')),
+                      if (config.acceptDns) _chip(cs, l10n.t('tile.dns')),
                       if (config.enableSocks5)
                         _chip(cs, 'SOCKS5:${config.socks5Port}'),
-                      if (config.multiThread) _chip(cs, 'Multi-Thread'),
-                      if (config.secureMode) _chip(cs, 'Secure Mode'),
-                      if (config.privateMode) _chip(cs, 'Private'),
-                      if (config.p2pOnly) _chip(cs, 'P2P Only'),
-                      if (config.noTun) _chip(cs, 'No TUN'),
+                      if (config.multiThread)
+                        _chip(cs, l10n.t('detail.multi_thread')),
+                      if (config.secureMode)
+                        _chip(cs, l10n.t('edit.secure_mode')),
+                      if (config.privateMode)
+                        _chip(cs, l10n.t('detail.private')),
+                      if (config.p2pOnly) _chip(cs, l10n.t('detail.p2p_only')),
+                      if (config.noTun) _chip(cs, l10n.t('tile.no_tun')),
                       if (config.useSmoltcp) _chip(cs, 'smoltcp'),
-                      if (config.proxyForwardBySystem) _chip(cs, 'Sys Proxy'),
-                      if (config.autoStart) _chip(cs, 'Auto-start'),
-                      if (config.serviceEnabled) _chip(cs, 'Service'),
+                      if (config.proxyForwardBySystem)
+                        _chip(cs, l10n.t('detail.sys_proxy')),
+                      if (config.autoStart)
+                        _chip(cs, l10n.t('edit.auto_start')),
+                      if (config.serviceEnabled)
+                        _chip(cs, l10n.t('tile.service')),
                       if (config.disableEncryption)
-                        _chip(cs, 'No Encryption', warn: true),
-                      if (config.disableP2p) _chip(cs, 'No P2P', warn: true),
+                        _chip(cs, l10n.t('detail.no_encryption'), warn: true),
+                      if (config.disableP2p)
+                        _chip(cs, l10n.t('detail.no_p2p'), warn: true),
                       if (config.noListener)
-                        _chip(cs, 'No Listener', warn: true),
+                        _chip(cs, l10n.t('detail.no_listener'), warn: true),
                     ],
                   ),
                 ],
@@ -923,9 +1039,12 @@ class _StoppedView extends StatelessWidget {
                       children: [
                         Icon(Icons.terminal, size: 14, color: cs.outline),
                         const SizedBox(width: 6),
-                        Text('Recent Instance Logs',
-                            style: ts.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        Text(
+                          l10n.t('detail.recent_instance_logs'),
+                          style: ts.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -940,10 +1059,12 @@ class _StoppedView extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: recentTail.map((line) {
                           final isErr = line.startsWith('[ERR]');
-                          final spans = parseAnsi(line,
-                              defaultColor: isErr
-                                  ? cs.error
-                                  : cs.onSurfaceVariant);
+                          final spans = parseAnsi(
+                            line,
+                            defaultColor: isErr
+                                ? cs.error
+                                : cs.onSurfaceVariant,
+                          );
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 2),
                             child: SelectableText.rich(
@@ -975,15 +1096,16 @@ class _StoppedView extends StatelessWidget {
         children: [
           SizedBox(
             width: 100,
-            child: Text(label,
-                style: TextStyle(
-                    color: cs.outline,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500)),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: cs.outline,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 13)),
-          ),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
         ],
       ),
     );
@@ -994,8 +1116,7 @@ class _StoppedView extends StatelessWidget {
       label: Text(label, style: const TextStyle(fontSize: 11)),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
-      backgroundColor:
-          warn ? cs.errorContainer : cs.secondaryContainer,
+      backgroundColor: warn ? cs.errorContainer : cs.secondaryContainer,
       side: BorderSide.none,
       padding: EdgeInsets.zero,
       labelPadding: const EdgeInsets.symmetric(horizontal: 6),
@@ -1049,20 +1170,27 @@ class _ServiceSectionState extends State<_ServiceSection> {
       builder: (context, snapshot) {
         final status = snapshot.data ?? ManagedServiceStatus.notInstalled;
         final statusText = switch (status) {
-          ManagedServiceStatus.running => 'Running',
-          ManagedServiceStatus.stopped => 'Installed',
-          ManagedServiceStatus.notInstalled => 'Not installed',
+          ManagedServiceStatus.running => context.l10n.t(
+            'detail.service_running',
+          ),
+          ManagedServiceStatus.stopped => context.l10n.t(
+            'detail.service_installed',
+          ),
+          ManagedServiceStatus.notInstalled => context.l10n.t(
+            'detail.service_not_installed',
+          ),
         };
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('System Service',
-                style:
-                    ts.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            Text(
+              context.l10n.t('detail.system_service'),
+              style: ts.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             Text(
-              'Manage a boot-time service for this network only.',
+              context.l10n.t('detail.service_manage_help'),
               style: ts.bodySmall?.copyWith(color: cs.outline),
             ),
             const SizedBox(height: 8),
@@ -1070,7 +1198,9 @@ class _ServiceSectionState extends State<_ServiceSection> {
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: status == ManagedServiceStatus.running
                         ? cs.primaryContainer
@@ -1103,34 +1233,40 @@ class _ServiceSectionState extends State<_ServiceSection> {
               children: [
                 FilledButton.tonalIcon(
                   icon: const Icon(Icons.build_circle_outlined, size: 18),
-                  label: Text(widget.config.serviceEnabled
-                      ? 'Update Service'
-                      : 'Install Service'),
+                  label: Text(
+                    widget.config.serviceEnabled
+                        ? context.l10n.t('detail.update_service')
+                        : context.l10n.t('detail.install_service'),
+                  ),
                   onPressed: () async {
-                    final msg = await context
-                        .read<AppState>()
-                        .installService(widget.config.id);
+                    final msg = await context.read<AppState>().installService(
+                      widget.config.id,
+                    );
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(msg),
-                      behavior: SnackBarBehavior.floating,
-                    ));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(msg),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
                     await _refresh();
                   },
                 ),
                 if (widget.config.serviceEnabled)
                   OutlinedButton.icon(
                     icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('Uninstall'),
+                    label: Text(context.l10n.t('detail.uninstall')),
                     onPressed: () async {
                       final msg = await context
                           .read<AppState>()
                           .uninstallService(widget.config.id);
                       if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(msg),
-                        behavior: SnackBarBehavior.floating,
-                      ));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(msg),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
                       await _refresh();
                     },
                   ),
@@ -1143,23 +1279,28 @@ class _ServiceSectionState extends State<_ServiceSection> {
                       size: 18,
                     ),
                     label: Text(
-                      status == ManagedServiceStatus.running ? 'Stop' : 'Start',
+                      status == ManagedServiceStatus.running
+                          ? context.l10n.t('common.stop')
+                          : context.l10n.t('common.start'),
                     ),
                     onPressed: () async {
                       final state = context.read<AppState>();
                       String msg;
                       if (status == ManagedServiceStatus.running) {
                         await state.stopInstance(widget.config.id);
-                        msg = 'Service stopped';
+                        msg = context.l10n.t('detail.stop_service');
                       } else {
-                        msg = await state.startInstance(widget.config.id) ??
-                            'Service started';
+                        msg =
+                            await state.startInstance(widget.config.id) ??
+                            context.l10n.t('detail.start_service');
                       }
                       if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(msg),
-                        behavior: SnackBarBehavior.floating,
-                      ));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(msg),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
                       await _refresh();
                     },
                   ),
@@ -1176,12 +1317,14 @@ class _ServiceSectionState extends State<_ServiceSection> {
 
 void _editConfig(BuildContext context, NetworkConfig config) {
   final state = context.read<AppState>();
-  Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => ChangeNotifierProvider.value(
-      value: state,
-      child: ConfigEditScreen(config: config, isNew: false),
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => ChangeNotifierProvider.value(
+        value: state,
+        child: ConfigEditScreen(config: config, isNew: false),
+      ),
     ),
-  ));
+  );
 }
 
 void _showTomlEditor(BuildContext context, NetworkConfig config) {
@@ -1196,17 +1339,19 @@ void _showTomlEditor(BuildContext context, NetworkConfig config) {
       return AlertDialog(
         title: Row(
           children: [
-            const Text('TOML Configuration'),
+            Text(context.l10n.t('detail.toml_config')),
             const Spacer(),
             IconButton(
               icon: const Icon(Icons.copy, size: 18),
-              tooltip: 'Copy to clipboard',
+              tooltip: context.l10n.t('detail.copy_clipboard'),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: ctrl.text));
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                  content: Text('TOML copied'),
-                  behavior: SnackBarBehavior.floating,
-                ));
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text(context.l10n.t('detail.toml_copied')),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
               },
             ),
           ],
@@ -1217,16 +1362,17 @@ void _showTomlEditor(BuildContext context, NetworkConfig config) {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('File: $tomlPath',
-                  style: TextStyle(fontSize: 11, color: cs.outline)),
+              Text(
+                context.l10n.t('detail.file', {'path': tomlPath}),
+                style: TextStyle(fontSize: 11, color: cs.outline),
+              ),
               const SizedBox(height: 8),
               Expanded(
                 child: TextField(
                   controller: ctrl,
                   maxLines: null,
                   expands: true,
-                  style: const TextStyle(
-                      fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                   decoration: InputDecoration(
                     border: const OutlineInputBorder(),
                     filled: true,
@@ -1240,27 +1386,34 @@ void _showTomlEditor(BuildContext context, NetworkConfig config) {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(context.l10n.t('common.cancel')),
+          ),
           FilledButton(
             onPressed: () async {
               final err = await state.updateConfigToml(config.id, ctrl.text);
               if (err != null) {
                 if (!ctx.mounted) return;
-                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                  content: Text(err),
-                  behavior: SnackBarBehavior.floating,
-                ));
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text(err),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
                 return;
               }
               if (!ctx.mounted) return;
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Saved to $tomlPath'),
-                behavior: SnackBarBehavior.floating,
-              ));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    context.l10n.t('detail.saved_to', {'path': tomlPath}),
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
             },
-            child: const Text('Save to file'),
+            child: Text(context.l10n.t('detail.save_to_file')),
           ),
         ],
       );
@@ -1273,18 +1426,23 @@ void _confirmDelete(BuildContext context, NetworkConfig config) {
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Delete network?'),
-      content:
-          Text('Remove "${config.displayName}"? This cannot be undone.'),
+      title: Text(context.l10n.t('detail.delete_network')),
+      content: Text(
+        context.l10n.t('detail.delete_network_confirm', {
+          'name': config.displayName,
+        }),
+      ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(context.l10n.t('common.cancel')),
+        ),
         FilledButton(
           onPressed: () {
             state.removeConfig(config.id);
             Navigator.pop(ctx);
           },
-          child: const Text('Delete'),
+          child: Text(context.l10n.t('common.delete')),
         ),
       ],
     ),
@@ -1293,14 +1451,19 @@ void _confirmDelete(BuildContext context, NetworkConfig config) {
 
 // ── Format helpers ──
 
-String _formatDuration(Duration? d) {
+String _formatDuration(BuildContext context, Duration? d) {
   if (d == null) return '-';
+  final l10n = context.l10n;
   final h = d.inHours;
   final m = d.inMinutes.remainder(60);
   final s = d.inSeconds.remainder(60);
-  if (h > 0) return '${h}h ${m}m';
-  if (m > 0) return '${m}m ${s}s';
-  return '${s}s';
+  if (h > 0) {
+    return l10n.t('detail.duration_hm', {'hours': '$h', 'minutes': '$m'});
+  }
+  if (m > 0) {
+    return l10n.t('detail.duration_ms', {'minutes': '$m', 'seconds': '$s'});
+  }
+  return l10n.t('detail.duration_s', {'seconds': '$s'});
 }
 
 String _formatBytes(int bytes) {

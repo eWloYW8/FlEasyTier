@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+
 class StatusBadge extends StatelessWidget {
-  const StatusBadge({
-    super.key,
-    required this.running,
-    this.compact = false,
-  });
+  const StatusBadge({super.key, required this.running, this.compact = false});
 
   final bool running;
   final bool compact;
@@ -13,6 +11,7 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
 
     if (compact) {
       return Container(
@@ -24,7 +23,7 @@ class StatusBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
-          running ? 'ON' : 'OFF',
+          running ? l10n.t('status.on') : l10n.t('status.off'),
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w700,
@@ -56,7 +55,7 @@ class StatusBadge extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            running ? 'Running' : 'Stopped',
+            running ? l10n.t('status.running') : l10n.t('status.stopped'),
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,

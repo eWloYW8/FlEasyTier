@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/network_instance.dart';
 
 class PeerListView extends StatelessWidget {
@@ -31,7 +32,9 @@ class PeerListView extends StatelessWidget {
       itemCount: summaries.length,
       separatorBuilder: (context, index) => Divider(
         height: 1,
-        color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.28),
+        color: Theme.of(
+          context,
+        ).colorScheme.outlineVariant.withValues(alpha: 0.28),
       ),
       itemBuilder: (context, index) => _PeerRow(
         summary: summaries[index],
@@ -105,14 +108,15 @@ class _PeerSummary {
   final int peerId;
 
   String get hostname =>
-      route?.hostname.isNotEmpty == true ? route!.hostname : 'Peer $peerId';
+      route?.hostname.isNotEmpty == true ? route!.hostname : '';
 
   String get clientVersion => route?.version ?? '';
 
   String get primaryIp => route?.ipv4Addr ?? '';
 
-  String get primarySortIp =>
-      route?.ipv4Addr.isNotEmpty == true ? route!.ipv4Addr : route?.ipv6Addr ?? '';
+  String get primarySortIp => route?.ipv4Addr.isNotEmpty == true
+      ? route!.ipv4Addr
+      : route?.ipv6Addr ?? '';
 
   int get totalRx => conns.fold(0, (sum, conn) => sum + conn.rxBytes);
 
@@ -138,20 +142,17 @@ class _PeerSummary {
 
   double get displayLossRate => primaryConn?.lossRate ?? 0;
 
-  String nextHopLabel(
-    bool latencyFirstEnabled,
-    Map<int, String> peerNames,
-  ) {
+  String nextHopLabel(bool latencyFirstEnabled, Map<int, String> peerNames) {
     if (route == null) return '-';
     final nextHop = route!.currentNextHopPeerId(latencyFirstEnabled);
     if (nextHop <= 0 || route!.currentCost(latencyFirstEnabled) <= 1) {
-      return 'Direct';
+      return '';
     }
     final name = peerNames[nextHop];
     if (name != null && name.isNotEmpty) {
       return name;
     }
-    return 'Peer $nextHop';
+    return '$nextHop';
   }
 
   String? latencyFirstLabel(
@@ -161,10 +162,10 @@ class _PeerSummary {
     if (route == null || !route!.hasLatencyFirstRoute) return null;
     if (latencyFirstEnabled) return null;
     if (route!.nextHopPeerIdLatencyFirst <= 0) return null;
-    if (route!.costLatencyFirst <= 1) return 'LF Direct';
+    if (route!.costLatencyFirst <= 1) return 'DIRECT';
     final name = peerNames[route!.nextHopPeerIdLatencyFirst];
-    if (name != null && name.isNotEmpty) return 'LF $name';
-    return 'LF Peer';
+    if (name != null && name.isNotEmpty) return name;
+    return '${route!.nextHopPeerIdLatencyFirst}';
   }
 }
 
@@ -189,12 +190,17 @@ class _PeerRowState extends State<_PeerRow> {
   Widget build(BuildContext context) {
     final s = widget.summary;
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
     final accent = s.route?.isDirect == true ? Colors.green : Colors.orange;
     final currentLatency = s.displayLatency(widget.latencyFirstEnabled);
-    final currentHop =
-        s.nextHopLabel(widget.latencyFirstEnabled, widget.peerNames);
-    final latencyFirstLabel =
-        s.latencyFirstLabel(widget.latencyFirstEnabled, widget.peerNames);
+    final currentHop = s.nextHopLabel(
+      widget.latencyFirstEnabled,
+      widget.peerNames,
+    );
+    final latencyFirstLabel = s.latencyFirstLabel(
+      widget.latencyFirstEnabled,
+      widget.peerNames,
+    );
 
     return InkWell(
       onTap: () => setState(() => _expanded = !_expanded),
@@ -234,7 +240,11 @@ class _PeerRowState extends State<_PeerRow> {
                               TextSpan(
                                 children: [
                                   TextSpan(
-                                    text: s.hostname,
+                                    text: s.hostname.isNotEmpty
+                                        ? s.hostname
+                                        : l10n.t('peer.peer', {
+                                            'id': '${s.peerId}',
+                                          }),
                                     style: const TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w400,
@@ -272,7 +282,9 @@ class _PeerRowState extends State<_PeerRow> {
                                 runSpacing: 4,
                                 children: [
                                   _LabelPill(
-                                    text: s.route?.isDirect == true ? 'P2P' : 'Relay',
+                                    text: s.route?.isDirect == true
+                                        ? l10n.t('peer.p2p')
+                                        : l10n.t('common.relay'),
                                     color: accent.shade700,
                                     background: accent.withValues(alpha: 0.14),
                                   ),
@@ -309,23 +321,30 @@ class _PeerRowState extends State<_PeerRow> {
                           ),
                           _MetaLine(
                             icon: Icons.water_drop_outlined,
-                            text: '${(s.displayLossRate * 100).toStringAsFixed(1)}%',
+                            text:
+                                '${(s.displayLossRate * 100).toStringAsFixed(1)}%',
                             color: _lossColor(s.displayLossRate),
                           ),
                           _MetaLine(
                             icon: Icons.alt_route_outlined,
-                            text: currentHop,
+                            text: currentHop.isEmpty
+                                ? l10n.t('common.direct')
+                                : '${l10n.t('peer.peer', {'id': currentHop})}',
                           ),
                           if (s.route != null)
                             _MetaLine(
                               icon: Icons.route_outlined,
-                              text:
-                                  'cost ${s.route!.currentCost(widget.latencyFirstEnabled)}',
+                              text: l10n.t('peer.cost', {
+                                'value':
+                                    '${s.route!.currentCost(widget.latencyFirstEnabled)}',
+                              }),
                             ),
                           if (latencyFirstLabel != null)
                             _MetaLine(
                               icon: Icons.speed_outlined,
-                              text: latencyFirstLabel,
+                              text: latencyFirstLabel == 'DIRECT'
+                                  ? l10n.t('peer.lf_direct')
+                                  : latencyFirstLabel,
                             ),
                           _MetaLine(
                             icon: Icons.download_rounded,
@@ -404,6 +423,7 @@ class _ConnRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Container(
@@ -411,9 +431,7 @@ class _ConnRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: cs.surfaceContainer,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: 0.16),
-          ),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.16)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,13 +467,13 @@ class _ConnRow extends StatelessWidget {
                         ),
                         if (conn.isDefault)
                           _LabelPill(
-                            text: 'Default',
+                            text: l10n.t('peer.default'),
                             color: cs.tertiary,
                             background: cs.tertiaryContainer,
                           ),
                         if (conn.isClosed)
                           _LabelPill(
-                            text: 'Closed',
+                            text: l10n.t('peer.closed'),
                             color: cs.error,
                             background: cs.errorContainer,
                           ),
@@ -508,7 +526,10 @@ class _ConnRow extends StatelessWidget {
             const SizedBox(height: 6),
             _AddressLine(icon: Icons.call_made_outlined, value: conn.localAddr),
             const SizedBox(height: 4),
-            _AddressLine(icon: Icons.call_received_outlined, value: conn.remoteAddr),
+            _AddressLine(
+              icon: Icons.call_received_outlined,
+              value: conn.remoteAddr,
+            ),
           ],
         ),
       ),
@@ -537,7 +558,9 @@ class _AddressLine extends StatelessWidget {
                     Clipboard.setData(ClipboardData(text: value));
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Copied: $value'),
+                        content: Text(
+                          context.l10n.t('common.copied', {'value': value}),
+                        ),
                         behavior: SnackBarBehavior.floating,
                         duration: const Duration(seconds: 1),
                       ),

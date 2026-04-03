@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 
 class AboutScreen extends StatefulWidget {
@@ -15,11 +16,7 @@ class AboutScreen extends StatefulWidget {
 }
 
 class _RepoLinkTile extends StatelessWidget {
-  const _RepoLinkTile({
-    required this.name,
-    required this.url,
-    this.subtitle,
-  });
+  const _RepoLinkTile({required this.name, required this.url, this.subtitle});
 
   final String name;
   final String url;
@@ -29,13 +26,14 @@ class _RepoLinkTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final uri = Uri.parse(url);
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
 
     Future<void> openLink() async {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!context.mounted || ok) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to open $url'),
+          content: Text(l10n.t('about.failed_open', {'url': url})),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -45,8 +43,8 @@ class _RepoLinkTile extends StatelessWidget {
       await Clipboard.setData(ClipboardData(text: url));
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Link copied'),
+        SnackBar(
+          content: Text(l10n.t('about.link_copied')),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -81,27 +79,24 @@ class _RepoLinkTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      name,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
+                    Text(name, style: Theme.of(context).textTheme.titleSmall),
                     const SizedBox(height: 4),
                     Text(
                       subtitle ?? url.replaceFirst('https://', ''),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
+                        color: cs.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
               ),
               IconButton(
-                tooltip: 'Copy',
+                tooltip: l10n.t('common.copy'),
                 onPressed: copyLink,
                 icon: const Icon(Icons.copy_outlined, size: 18),
               ),
               IconButton(
-                tooltip: 'Open',
+                tooltip: l10n.t('about.open'),
                 onPressed: openLink,
                 icon: const Icon(Icons.open_in_new_rounded, size: 20),
               ),
@@ -139,14 +134,15 @@ class _AboutScreenState extends State<AboutScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
     final version = _packageInfo == null
-        ? 'Loading...'
+        ? l10n.t('common.loading')
         : _packageInfo!.buildNumber.isEmpty
-            ? _packageInfo!.version
-            : '${_packageInfo!.version} (${_packageInfo!.buildNumber})';
+        ? _packageInfo!.version
+        : '${_packageInfo!.version} (${_packageInfo!.buildNumber})';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('About')),
+      appBar: AppBar(title: Text(l10n.t('nav.about'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -180,10 +176,9 @@ class _AboutScreenState extends State<AboutScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Flutter GUI for EasyTier',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: cs.onSurfaceVariant,
-                              ),
+                          l10n.t('about.subtitle'),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: cs.onSurfaceVariant),
                         ),
                       ],
                     ),
@@ -200,14 +195,14 @@ class _AboutScreenState extends State<AboutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Versions',
+                    l10n.t('about.versions'),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 16),
                   _InfoRow(label: 'FlEasyTier', value: version),
                   _InfoRow(
-                    label: 'Core',
-                    value: _coreVersion ?? 'Unavailable',
+                    label: l10n.t('about.core'),
+                    value: _coreVersion ?? l10n.t('common.unavailable'),
                   ),
                 ],
               ),
@@ -221,7 +216,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Links',
+                    l10n.t('about.links'),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 16),
@@ -247,11 +242,7 @@ class _AboutScreenState extends State<AboutScreen> {
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.label,
-    required this.value,
-    this.mono = false,
-  });
+  const _InfoRow({required this.label, required this.value, this.mono = false});
 
   final String label;
   final String value;
@@ -269,10 +260,7 @@ class _InfoRow extends StatelessWidget {
             width: 96,
             child: Text(
               label,
-              style: TextStyle(
-                color: cs.onSurfaceVariant,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
             ),
           ),
           Expanded(
@@ -291,10 +279,7 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _LinkRow extends StatelessWidget {
-  const _LinkRow({
-    required this.label,
-    required this.url,
-  });
+  const _LinkRow({required this.label, required this.url});
 
   final String label;
   final String url;
@@ -311,10 +296,7 @@ class _LinkRow extends StatelessWidget {
           width: 120,
           child: Text(
             label,
-            style: TextStyle(
-              color: cs.onSurfaceVariant,
-              fontSize: 13,
-            ),
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
           ),
         ),
         Expanded(
@@ -324,7 +306,9 @@ class _LinkRow extends StatelessWidget {
               if (!context.mounted || ok) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Failed to open $url'),
+                  content: Text(
+                    context.l10n.t('about.failed_open', {'url': url}),
+                  ),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
@@ -344,13 +328,13 @@ class _LinkRow extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         IconButton(
-          tooltip: 'Copy',
+          tooltip: context.l10n.t('common.copy'),
           onPressed: () async {
             await Clipboard.setData(ClipboardData(text: url));
             if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Link copied'),
+              SnackBar(
+                content: Text(context.l10n.t('about.link_copied')),
                 behavior: SnackBarBehavior.floating,
               ),
             );

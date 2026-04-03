@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/network_config.dart';
 import '../providers/app_state.dart';
 import '../widgets/network_tile.dart';
@@ -62,19 +63,21 @@ class _ListHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
       child: Row(
         children: [
-          Text('Networks',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w600)),
+          Text(
+            l10n.t('nav.networks'),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const Spacer(),
           IconButton.filledTonal(
             icon: const Icon(Icons.add, size: 20),
-            tooltip: 'New network',
+            tooltip: l10n.t('networks.new_network'),
             onPressed: () => _addConfig(context),
           ),
         ],
@@ -91,7 +94,7 @@ class _MobileLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Networks')),
+      appBar: AppBar(title: Text(context.l10n.t('nav.networks'))),
       body: const _ConfigList(navigateOnTap: true),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _addConfig(context),
@@ -128,15 +131,17 @@ class _ConfigList extends StatelessWidget {
           onTap: () {
             state.selectConfig(cfg.id);
             if (navigateOnTap) {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => ChangeNotifierProvider.value(
-                  value: state,
-                  child: Scaffold(
-                    appBar: AppBar(title: Text(cfg.displayName)),
-                    body: NetworkDetailScreen(configId: cfg.id),
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChangeNotifierProvider.value(
+                    value: state,
+                    child: Scaffold(
+                      appBar: AppBar(title: Text(cfg.displayName)),
+                      body: NetworkDetailScreen(configId: cfg.id),
+                    ),
                   ),
                 ),
-              ));
+              );
             }
           },
         );
@@ -150,10 +155,11 @@ class _EmptyList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Center(
       child: FilledButton.icon(
         icon: const Icon(Icons.add),
-        label: const Text('Create Network'),
+        label: Text(l10n.t('networks.create_network')),
         onPressed: () => _addConfig(context),
       ),
     );
@@ -172,6 +178,7 @@ class _EmptyDetail extends StatelessWidget {
 // ── Helpers ──
 
 Future<void> _addConfig(BuildContext context) async {
+  final l10n = context.l10n;
   final action = await showModalBottomSheet<_NewNetworkAction>(
     context: context,
     showDragHandle: true,
@@ -183,17 +190,17 @@ Future<void> _addConfig(BuildContext context) async {
           children: [
             ListTile(
               leading: const Icon(Icons.file_open_outlined),
-              title: const Text('Import TOML'),
+              title: Text(l10n.t('networks.import_toml')),
               onTap: () => Navigator.pop(ctx, _NewNetworkAction.importToml),
             ),
             ListTile(
               leading: const Icon(Icons.tune),
-              title: const Text('Edit Config'),
+              title: Text(l10n.t('networks.edit_config')),
               onTap: () => Navigator.pop(ctx, _NewNetworkAction.editConfig),
             ),
             ListTile(
               leading: const Icon(Icons.code_outlined),
-              title: const Text('Edit TOML'),
+              title: Text(l10n.t('networks.edit_toml')),
               onTap: () => Navigator.pop(ctx, _NewNetworkAction.editToml),
             ),
           ],
@@ -209,12 +216,14 @@ Future<void> _addConfig(BuildContext context) async {
       await _showTomlImportDialog(context, state);
     case _NewNetworkAction.editConfig:
       final config = _makeDraftConfig(state);
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ChangeNotifierProvider.value(
-          value: state,
-          child: ConfigEditScreen(config: config, isNew: true),
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChangeNotifierProvider.value(
+            value: state,
+            child: ConfigEditScreen(config: config, isNew: true),
+          ),
         ),
-      ));
+      );
     case _NewNetworkAction.editToml:
       await _showNewTomlEditor(context, state);
   }
@@ -230,12 +239,13 @@ NetworkConfig _makeDraftConfig(AppState state) {
 }
 
 Future<void> _showTomlImportDialog(BuildContext context, AppState state) async {
+  final l10n = context.l10n;
   final fallbackConfig = _makeDraftConfig(state);
   try {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['toml'],
-      dialogTitle: 'Import TOML',
+      dialogTitle: l10n.t('networks.import_toml'),
       withData: false,
     );
     final path = result?.files.single.path;
@@ -254,7 +264,7 @@ Future<void> _showTomlImportDialog(BuildContext context, AppState state) async {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Import failed: $e'),
+        content: Text(l10n.t('networks.import_failed', {'error': '$e'})),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -262,6 +272,7 @@ Future<void> _showTomlImportDialog(BuildContext context, AppState state) async {
 }
 
 Future<void> _showNewTomlEditor(BuildContext context, AppState state) async {
+  final l10n = context.l10n;
   final draft = _makeDraftConfig(state);
   final ctrl = TextEditingController(text: draft.toToml());
 
@@ -272,7 +283,7 @@ Future<void> _showNewTomlEditor(BuildContext context, AppState state) async {
       return AlertDialog(
         title: Row(
           children: [
-            const Text('New TOML'),
+            Text(l10n.t('networks.new_toml')),
             const Spacer(),
             IconButton(
               icon: const Icon(Icons.copy, size: 18),
@@ -301,7 +312,7 @@ Future<void> _showNewTomlEditor(BuildContext context, AppState state) async {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(l10n.t('common.cancel')),
           ),
           FilledButton(
             onPressed: () {
@@ -318,13 +329,15 @@ Future<void> _showNewTomlEditor(BuildContext context, AppState state) async {
               } catch (e) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Save failed: $e'),
+                    content: Text(
+                      l10n.t('networks.save_failed', {'error': '$e'}),
+                    ),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
               }
             },
-            child: const Text('Create'),
+            child: Text(l10n.t('common.create')),
           ),
         ],
       );
@@ -332,8 +345,4 @@ Future<void> _showNewTomlEditor(BuildContext context, AppState state) async {
   );
 }
 
-enum _NewNetworkAction {
-  importToml,
-  editConfig,
-  editToml,
-}
+enum _NewNetworkAction { importToml, editConfig, editToml }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/network_config.dart';
 
 class PortForwardEditor extends StatelessWidget {
@@ -16,22 +17,25 @@ class PortForwardEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Text('Port Forwards',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: cs.onSurface,
-                )),
+            Text(
+              l10n.t('port_forwards.title'),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: cs.onSurface,
+              ),
+            ),
             const Spacer(),
             IconButton.filledTonal(
               icon: const Icon(Icons.add, size: 20),
-              tooltip: 'Add rule',
+              tooltip: l10n.t('port_forwards.add_rule'),
               onPressed: () => _showAddDialog(context),
             ),
           ],
@@ -51,8 +55,7 @@ class PortForwardEditor extends StatelessWidget {
                 ),
                 title: Text(
                   pf.displayText,
-                  style: const TextStyle(
-                      fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                 ),
                 trailing: IconButton(
                   icon: Icon(Icons.close, size: 18, color: cs.error),
@@ -70,6 +73,7 @@ class PortForwardEditor extends StatelessWidget {
   }
 
   void _showAddDialog(BuildContext context) {
+    final l10n = context.l10n;
     final bindIpCtrl = TextEditingController(text: '0.0.0.0');
     final bindPortCtrl = TextEditingController();
     final dstIpCtrl = TextEditingController();
@@ -80,15 +84,21 @@ class PortForwardEditor extends StatelessWidget {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Add Port Forward'),
+          title: Text(l10n.t('port_forwards.add_title')),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'tcp', label: Text('TCP')),
-                    ButtonSegment(value: 'udp', label: Text('UDP')),
+                  segments: [
+                    ButtonSegment(
+                      value: 'tcp',
+                      label: Text(l10n.t('port_forwards.protocol_tcp')),
+                    ),
+                    ButtonSegment(
+                      value: 'udp',
+                      label: Text(l10n.t('port_forwards.protocol_udp')),
+                    ),
                   ],
                   selected: {proto},
                   onSelectionChanged: (s) =>
@@ -101,8 +111,8 @@ class PortForwardEditor extends StatelessWidget {
                       flex: 3,
                       child: TextField(
                         controller: bindIpCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Bind IP',
+                        decoration: InputDecoration(
+                          labelText: l10n.t('port_forwards.bind_ip'),
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
@@ -113,14 +123,14 @@ class PortForwardEditor extends StatelessWidget {
                       flex: 2,
                       child: TextField(
                         controller: bindPortCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Bind Port',
+                        decoration: InputDecoration(
+                          labelText: l10n.t('port_forwards.bind_port'),
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
                         keyboardType: TextInputType.number,
                         inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly
+                          FilteringTextInputFormatter.digitsOnly,
                         ],
                       ),
                     ),
@@ -136,8 +146,8 @@ class PortForwardEditor extends StatelessWidget {
                       flex: 3,
                       child: TextField(
                         controller: dstIpCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Dest IP',
+                        decoration: InputDecoration(
+                          labelText: l10n.t('port_forwards.dest_ip'),
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
@@ -148,14 +158,14 @@ class PortForwardEditor extends StatelessWidget {
                       flex: 2,
                       child: TextField(
                         controller: dstPortCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Dest Port',
+                        decoration: InputDecoration(
+                          labelText: l10n.t('port_forwards.dest_port'),
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
                         keyboardType: TextInputType.number,
                         inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly
+                          FilteringTextInputFormatter.digitsOnly,
                         ],
                       ),
                     ),
@@ -167,12 +177,11 @@ class PortForwardEditor extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: Text(l10n.t('common.cancel')),
             ),
             FilledButton(
               onPressed: () {
-                final bindPort =
-                    int.tryParse(bindPortCtrl.text) ?? 0;
+                final bindPort = int.tryParse(bindPortCtrl.text) ?? 0;
                 final dstPort = int.tryParse(dstPortCtrl.text) ?? 0;
                 if (bindPort > 0 &&
                     dstPort > 0 &&
@@ -190,7 +199,7 @@ class PortForwardEditor extends StatelessWidget {
                   Navigator.pop(ctx);
                 }
               },
-              child: const Text('Add'),
+              child: Text(l10n.t('common.add')),
             ),
           ],
         ),

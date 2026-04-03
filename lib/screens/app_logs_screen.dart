@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/app_log_entry.dart';
 import '../providers/app_state.dart';
 
@@ -21,10 +22,11 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
     final state = context.watch<AppState>();
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
+    final l10n = context.l10n;
     final logs = state.appLogs.where(_matches).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Application Logs')),
+      appBar: AppBar(title: Text(l10n.t('logs.application'))),
       body: Column(
         children: [
           Padding(
@@ -34,9 +36,12 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
               decoration: BoxDecoration(
                 color: cs.surface,
                 border: Border(
-                  top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35)),
-                  bottom:
-                      BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35)),
+                  top: BorderSide(
+                    color: cs.outlineVariant.withValues(alpha: 0.35),
+                  ),
+                  bottom: BorderSide(
+                    color: cs.outlineVariant.withValues(alpha: 0.35),
+                  ),
                 ),
               ),
               child: Column(
@@ -51,25 +56,32 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
                           color: cs.primaryContainer,
                           borderRadius: BorderRadius.circular(9),
                         ),
-                        child: Icon(Icons.article_outlined,
-                            size: 16, color: cs.primary),
+                        child: Icon(
+                          Icons.article_outlined,
+                          size: 16,
+                          color: cs.primary,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Runtime Logs',
-                        style: ts.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                        l10n.t('logs.runtime'),
+                        style: ts.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const Spacer(),
                       Text(
-                        '${logs.length} visible',
+                        l10n.t('logs.visible_count', {
+                          'count': '${logs.length}',
+                        }),
                         style: ts.bodySmall?.copyWith(color: cs.outline),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   TextField(
-                    decoration: const InputDecoration(
-                      hintText: 'Search message, category, or detail',
+                    decoration: InputDecoration(
+                      hintText: l10n.t('common.search_logs'),
                       prefixIcon: Icon(Icons.search, size: 18),
                       border: OutlineInputBorder(),
                       isDense: true,
@@ -85,24 +97,24 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
                           runSpacing: 8,
                           children: [
                             _LevelChip(
-                              label: 'All',
+                              label: l10n.t('logs.all'),
                               selected: _level == null,
                               onTap: () => setState(() => _level = null),
                             ),
                             _LevelChip(
-                              label: 'Info',
+                              label: l10n.t('logs.info'),
                               selected: _level == AppLogLevel.info,
                               onTap: () =>
                                   setState(() => _level = AppLogLevel.info),
                             ),
                             _LevelChip(
-                              label: 'Warnings',
+                              label: l10n.t('logs.warnings'),
                               selected: _level == AppLogLevel.warning,
                               onTap: () =>
                                   setState(() => _level = AppLogLevel.warning),
                             ),
                             _LevelChip(
-                              label: 'Errors',
+                              label: l10n.t('logs.errors'),
                               selected: _level == AppLogLevel.error,
                               onTap: () =>
                                   setState(() => _level = AppLogLevel.error),
@@ -112,15 +124,15 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        tooltip: 'Copy all',
+                        tooltip: l10n.t('logs.copy_all'),
                         onPressed: () async {
                           await Clipboard.setData(
                             ClipboardData(text: state.exportAppLogsText()),
                           );
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Application logs copied'),
+                            SnackBar(
+                              content: Text(l10n.t('logs.copied')),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
@@ -128,9 +140,10 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
                         icon: const Icon(Icons.copy_all_outlined, size: 18),
                       ),
                       IconButton(
-                        tooltip: 'Clear',
-                        onPressed:
-                            state.appLogs.isEmpty ? null : () => state.clearAppLogs(),
+                        tooltip: l10n.t('logs.clear'),
+                        onPressed: state.appLogs.isEmpty
+                            ? null
+                            : () => state.clearAppLogs(),
                         icon: const Icon(Icons.delete_sweep_outlined, size: 18),
                       ),
                     ],
@@ -145,8 +158,10 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: logs.length,
-                    separatorBuilder: (context, index) =>
-                        Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
+                    separatorBuilder: (context, index) => Divider(
+                      height: 1,
+                      color: cs.outlineVariant.withValues(alpha: 0.3),
+                    ),
                     itemBuilder: (context, index) =>
                         _LogRow(entry: logs[index]),
                   ),
@@ -198,6 +213,7 @@ class _LogRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
     final badgeBg = switch (entry.level) {
       AppLogLevel.info => cs.primaryContainer,
       AppLogLevel.warning => const Color(0xFFFFE3B1),
@@ -251,13 +267,19 @@ class _LogRow extends StatelessWidget {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 7, vertical: 2),
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: badgeBg,
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              entry.levelLabel,
+                              switch (entry.level) {
+                                AppLogLevel.info => l10n.t('logs.info'),
+                                AppLogLevel.warning => l10n.t('logs.warnings'),
+                                AppLogLevel.error => l10n.t('logs.errors'),
+                              },
                               style: TextStyle(
                                 color: badgeFg,
                                 fontSize: 10,
@@ -266,25 +288,23 @@ class _LogRow extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          Icon(Icons.label_outline, size: 12, color: cs.outline),
+                          Icon(
+                            Icons.label_outline,
+                            size: 12,
+                            color: cs.outline,
+                          ),
                           const SizedBox(width: 4),
                           Flexible(
                             child: Text(
                               entry.category,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: cs.outline,
-                              ),
+                              style: TextStyle(fontSize: 11, color: cs.outline),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8),
                           Text(
                             _formatTimestamp(entry.timestamp),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: cs.outline,
-                            ),
+                            style: TextStyle(fontSize: 11, color: cs.outline),
                           ),
                         ],
                       ),
@@ -297,12 +317,15 @@ class _LogRow extends StatelessWidget {
                           height: 1.3,
                         ),
                       ),
-                      if (entry.detail != null && entry.detail!.trim().isNotEmpty) ...[
+                      if (entry.detail != null &&
+                          entry.detail!.trim().isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerLowest,
                             borderRadius: BorderRadius.circular(8),

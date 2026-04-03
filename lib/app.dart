@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'l10n/app_localizations.dart';
 import 'models/app_log_entry.dart';
 import 'providers/app_state.dart';
 import 'screens/about_screen.dart';
@@ -15,6 +17,38 @@ import 'screens/settings_screen.dart';
 
 class FlEasyTierApp extends StatelessWidget {
   const FlEasyTierApp({super.key});
+
+  List<String> _fontFallbacks() {
+    if (Platform.isWindows) {
+      return const [
+        'Microsoft YaHei UI',
+        'Microsoft YaHei',
+        'SimSun',
+        'Segoe UI Symbol',
+      ];
+    }
+    if (Platform.isMacOS) {
+      return const [
+        'PingFang SC',
+        'Hiragino Sans GB',
+        'Heiti SC',
+        '.AppleSystemUIFont',
+      ];
+    }
+    if (Platform.isAndroid) {
+      return const ['Noto Sans CJK SC', 'Noto Sans SC', 'sans-serif'];
+    }
+    if (Platform.isLinux) {
+      return const [
+        'Noto Sans CJK SC',
+        'Noto Sans SC',
+        'Source Han Sans SC',
+        'WenQuanYi Zen Hei',
+        'Droid Sans Fallback',
+      ];
+    }
+    return const ['Noto Sans CJK SC', 'Noto Sans SC'];
+  }
 
   ThemeData _buildTheme({
     required Color seedColor,
@@ -27,6 +61,7 @@ class FlEasyTierApp extends StatelessWidget {
         brightness: brightness,
         dynamicSchemeVariant: dynamicSchemeVariant,
       ),
+      fontFamilyFallback: _fontFallbacks(),
       useMaterial3: true,
     );
 
@@ -50,6 +85,14 @@ class FlEasyTierApp extends StatelessWidget {
     return MaterialApp(
       title: 'FlEasyTier',
       debugShowCheckedModeBanner: false,
+      locale: appState.locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       themeMode: appState.themeMode,
       theme: _buildTheme(
         seedColor: appState.seedColor,
@@ -71,12 +114,7 @@ class _AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        _MainShell(),
-        _ErrorToastLayer(),
-      ],
-    );
+    return const Stack(children: [_MainShell(), _ErrorToastLayer()]);
   }
 }
 
@@ -198,12 +236,13 @@ class _MainShellState extends State<_MainShell>
   Future<void> _initTray() async {
     if (!_isDesktop || _isTrayReady) return;
     final state = context.read<AppState>();
+    final l10n = context.l10n;
 
     await trayManager.setIcon(
       Platform.isWindows ? 'assets/tray_icon.ico' : 'assets/tray_icon.png',
     );
     if (Platform.isWindows || Platform.isMacOS) {
-      await trayManager.setToolTip('FlEasyTier');
+      await trayManager.setToolTip(l10n.t('app.title'));
     }
     await _refreshTrayMenu(state);
     _isTrayReady = true;
@@ -218,6 +257,7 @@ class _MainShellState extends State<_MainShell>
 
   Future<void> _refreshTrayMenu(AppState state) async {
     if (!_isDesktop) return;
+    final l10n = context.l10n;
     final visible = await windowManager.isVisible();
     final signature = [
       visible ? 'visible' : 'hidden',
@@ -229,15 +269,20 @@ class _MainShellState extends State<_MainShell>
       return;
     }
 
-    final runningConfigs =
-        state.configs.where((config) => state.isRunning(config.id)).toList();
+    final runningConfigs = state.configs
+        .where((config) => state.isRunning(config.id))
+        .toList();
     final networkItems = state.configs.isEmpty
-        ? [MenuItem(label: 'No Networks', disabled: true)]
+        ? [MenuItem(label: l10n.t('tray.no_networks'), disabled: true)]
         : state.configs.map((config) {
             final running = state.isRunning(config.id);
             final status = running
-                ? (config.serviceEnabled ? 'Running Service' : 'Running')
-                : (config.serviceEnabled ? 'Service Installed' : 'Stopped');
+                ? (config.serviceEnabled
+                      ? l10n.t('tray.running_service')
+                      : l10n.t('tray.running'))
+                : (config.serviceEnabled
+                      ? l10n.t('tray.service_installed')
+                      : l10n.t('tray.stopped'));
             return MenuItem.submenu(
               key: 'network:${config.id}',
               label: config.displayName,
@@ -245,16 +290,15 @@ class _MainShellState extends State<_MainShell>
                 items: [
                   MenuItem(
                     key: 'open_network:${config.id}',
-                    label: 'Open',
+                    label: l10n.t('tray.open'),
                   ),
                   MenuItem(
                     key: 'toggle_network:${config.id}',
-                    label: running ? 'Stop' : 'Start',
+                    label: running
+                        ? l10n.t('common.stop')
+                        : l10n.t('common.start'),
                   ),
-                  MenuItem(
-                    label: status,
-                    disabled: true,
-                  ),
+                  MenuItem(label: status, disabled: true),
                 ],
               ),
             );
@@ -265,46 +309,33 @@ class _MainShellState extends State<_MainShell>
         items: [
           MenuItem(
             key: visible ? 'hide_window' : 'show_window',
-            label: visible ? 'Hide Window' : 'Show Window',
+            label: visible
+                ? l10n.t('tray.hide_window')
+                : l10n.t('tray.show_window'),
           ),
-          MenuItem(
-            key: 'open_networks',
-            label: 'Networks',
-          ),
-          MenuItem(
-            key: 'open_logs',
-            label: 'Logs',
-          ),
-          MenuItem(
-            key: 'open_settings',
-            label: 'Settings',
-          ),
-          MenuItem(
-            key: 'open_about',
-            label: 'About',
-          ),
+          MenuItem(key: 'open_networks', label: l10n.t('nav.networks')),
+          MenuItem(key: 'open_logs', label: l10n.t('nav.logs')),
+          MenuItem(key: 'open_settings', label: l10n.t('nav.settings')),
+          MenuItem(key: 'open_about', label: l10n.t('nav.about')),
           MenuItem.separator(),
           MenuItem(
             key: 'start_all',
-            label: 'Start All',
+            label: l10n.t('tray.start_all'),
             disabled: state.configs.isEmpty,
           ),
           MenuItem(
             key: 'stop_all',
-            label: 'Stop All',
+            label: l10n.t('tray.stop_all'),
             disabled: runningConfigs.isEmpty,
           ),
           MenuItem.separator(),
           MenuItem.submenu(
             key: 'manage_networks',
-            label: 'Manage Networks',
+            label: l10n.t('tray.manage_networks'),
             submenu: Menu(items: networkItems),
           ),
           MenuItem.separator(),
-          MenuItem(
-            key: 'exit_app',
-            label: 'Exit',
-          ),
+          MenuItem(key: 'exit_app', label: l10n.t('tray.exit')),
         ],
       ),
     );
@@ -441,7 +472,9 @@ class _MainShellState extends State<_MainShell>
 
   Future<void> _stopAllNetworks() async {
     final state = context.read<AppState>();
-    for (final config in state.configs.where((config) => state.isRunning(config.id))) {
+    for (final config in state.configs.where(
+      (config) => state.isRunning(config.id),
+    )) {
       await state.stopInstance(config.id);
     }
     await _refreshTrayMenu(state);
@@ -450,6 +483,7 @@ class _MainShellState extends State<_MainShell>
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final l10n = context.l10n;
     final wide = MediaQuery.sizeOf(context).width >= 720;
     final pages = const [
       NetworksScreen(),
@@ -471,26 +505,26 @@ class _MainShellState extends State<_MainShell>
             bottomNavigationBar: NavigationBar(
               selectedIndex: _index,
               onDestinationSelected: (i) => setState(() => _index = i),
-              destinations: const [
+              destinations: [
                 NavigationDestination(
                   icon: Icon(Icons.hub_outlined),
                   selectedIcon: Icon(Icons.hub),
-                  label: 'Networks',
+                  label: l10n.t('nav.networks'),
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.receipt_long_outlined),
                   selectedIcon: Icon(Icons.receipt_long),
-                  label: 'Logs',
+                  label: l10n.t('nav.logs'),
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.settings_outlined),
                   selectedIcon: Icon(Icons.settings),
-                  label: 'Settings',
+                  label: l10n.t('nav.settings'),
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.info_outline),
                   selectedIcon: Icon(Icons.info),
-                  label: 'About',
+                  label: l10n.t('nav.about'),
                 ),
               ],
             ),
@@ -515,10 +549,10 @@ class _MainShellState extends State<_MainShell>
           children: [
             _DesktopWindowBar(
               pageTitle: switch (_index) {
-                0 => 'Networks',
-                1 => 'Logs',
-                2 => 'Settings',
-                _ => 'About',
+                0 => l10n.t('nav.networks'),
+                1 => l10n.t('nav.logs'),
+                2 => l10n.t('nav.settings'),
+                _ => l10n.t('nav.about'),
               },
               isAlwaysOnTop: _isAlwaysOnTop,
               isMaximized: _isMaximized,
@@ -538,17 +572,16 @@ class _MainShellState extends State<_MainShell>
 
   Widget _buildRail(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final railLabelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-        );
+    final l10n = context.l10n;
+    final railLabelStyle = Theme.of(
+      context,
+    ).textTheme.labelSmall?.copyWith(fontSize: 11, fontWeight: FontWeight.w500);
 
     return Theme(
       data: Theme.of(context).copyWith(
         navigationRailTheme: NavigationRailThemeData(
           unselectedLabelTextStyle: railLabelStyle,
-          selectedLabelTextStyle:
-              railLabelStyle?.copyWith(color: cs.primary),
+          selectedLabelTextStyle: railLabelStyle?.copyWith(color: cs.primary),
         ),
       ),
       child: NavigationRail(
@@ -558,26 +591,26 @@ class _MainShellState extends State<_MainShell>
         minExtendedWidth: 76,
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
+        destinations: [
           NavigationRailDestination(
-            icon: Icon(Icons.hub_outlined),
-            selectedIcon: Icon(Icons.hub),
-            label: Text('Networks'),
+            icon: const Icon(Icons.hub_outlined),
+            selectedIcon: const Icon(Icons.hub),
+            label: Text(l10n.t('nav.networks')),
           ),
           NavigationRailDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: Text('Logs'),
+            icon: const Icon(Icons.receipt_long_outlined),
+            selectedIcon: const Icon(Icons.receipt_long),
+            label: Text(l10n.t('nav.logs')),
           ),
           NavigationRailDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: Text('Settings'),
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings),
+            label: Text(l10n.t('nav.settings')),
           ),
           NavigationRailDestination(
-            icon: Icon(Icons.info_outline),
-            selectedIcon: Icon(Icons.info),
-            label: Text('About'),
+            icon: const Icon(Icons.info_outline),
+            selectedIcon: const Icon(Icons.info),
+            label: Text(l10n.t('nav.about')),
           ),
         ],
       ),
@@ -639,7 +672,7 @@ class _DesktopWindowBar extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          'FlEasyTier',
+                          context.l10n.t('app.title'),
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -663,25 +696,29 @@ class _DesktopWindowBar extends StatelessWidget {
                 ),
               ),
               _WindowActionButton(
-                tooltip: isAlwaysOnTop ? 'Unpin Window' : 'Pin Window',
+                tooltip: isAlwaysOnTop
+                    ? context.l10n.t('window.unpin')
+                    : context.l10n.t('window.pin'),
                 icon: isAlwaysOnTop ? Icons.push_pin : Icons.push_pin_outlined,
                 active: isAlwaysOnTop,
                 onPressed: onToggleAlwaysOnTop,
               ),
               _WindowActionButton(
-                tooltip: 'Minimize',
+                tooltip: context.l10n.t('window.minimize'),
                 icon: Icons.remove_rounded,
                 onPressed: onMinimize,
               ),
               _WindowActionButton(
-                tooltip: isMaximized ? 'Restore' : 'Maximize',
+                tooltip: isMaximized
+                    ? context.l10n.t('window.restore')
+                    : context.l10n.t('window.maximize'),
                 icon: isMaximized
                     ? Icons.filter_none_rounded
                     : Icons.crop_square_rounded,
                 onPressed: onToggleMaximize,
               ),
               _WindowActionButton(
-                tooltip: 'Close',
+                tooltip: context.l10n.t('window.close'),
                 icon: Icons.close_rounded,
                 onPressed: onClose,
                 danger: true,
@@ -748,7 +785,9 @@ class _ErrorToastLayerState extends State<_ErrorToastLayer> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final current = _items.where((candidate) => candidate.id == id).firstOrNull;
+      final current = _items
+          .where((candidate) => candidate.id == id)
+          .firstOrNull;
       if (current == null || current.dismissing) return;
       setState(() {
         current.visible = true;
@@ -789,25 +828,27 @@ class _ErrorToastLayerState extends State<_ErrorToastLayer> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: _items
-                  .map((item) => Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: AnimatedSlide(
+                  .map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: AnimatedSlide(
+                        duration: _animationDuration,
+                        curve: Curves.easeOutCubic,
+                        offset: item.visible
+                            ? Offset.zero
+                            : const Offset(0, 0.18),
+                        child: AnimatedOpacity(
                           duration: _animationDuration,
                           curve: Curves.easeOutCubic,
-                          offset: item.visible
-                              ? Offset.zero
-                              : const Offset(0, 0.18),
-                          child: AnimatedOpacity(
-                            duration: _animationDuration,
-                            curve: Curves.easeOutCubic,
-                            opacity: item.visible ? 1 : 0,
-                            child: _ErrorToastCard(
-                              entry: item.entry,
-                              onClose: () => _dismissToast(item.id),
-                            ),
+                          opacity: item.visible ? 1 : 0,
+                          child: _ErrorToastCard(
+                            entry: item.entry,
+                            onClose: () => _dismissToast(item.id),
                           ),
                         ),
-                      ))
+                      ),
+                    ),
+                  )
                   .toList(),
             ),
           ),
@@ -818,10 +859,7 @@ class _ErrorToastLayerState extends State<_ErrorToastLayer> {
 }
 
 class _ErrorToastCard extends StatelessWidget {
-  const _ErrorToastCard({
-    required this.entry,
-    required this.onClose,
-  });
+  const _ErrorToastCard({required this.entry, required this.onClose});
 
   final AppLogEntry entry;
   final VoidCallback onClose;
@@ -831,6 +869,7 @@ class _ErrorToastCard extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final detail = entry.detail?.trim() ?? '';
+    final l10n = context.l10n;
 
     return Material(
       elevation: 10,
@@ -840,9 +879,7 @@ class _ErrorToastCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: cs.errorContainer,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: cs.error.withValues(alpha: 0.25),
-          ),
+          border: Border.all(color: cs.error.withValues(alpha: 0.25)),
         ),
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -871,7 +908,7 @@ class _ErrorToastCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${entry.category} Error',
+                        '${entry.category} ${l10n.t('common.error')}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelLarge?.copyWith(
@@ -977,13 +1014,13 @@ class _WindowActionButton extends StatelessWidget {
     final foregroundColor = danger
         ? cs.error
         : active
-            ? cs.primary
-            : cs.onSurfaceVariant;
+        ? cs.primary
+        : cs.onSurfaceVariant;
     final backgroundColor = danger
         ? cs.errorContainer.withValues(alpha: 0.35)
         : active
-            ? cs.primaryContainer.withValues(alpha: 0.7)
-            : Colors.transparent;
+        ? cs.primaryContainer.withValues(alpha: 0.7)
+        : Colors.transparent;
 
     return Tooltip(
       message: tooltip,

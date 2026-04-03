@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+
 class StringListEditor extends StatefulWidget {
   const StringListEditor({
     super.key,
@@ -42,16 +44,19 @@ class _StringListEditorState extends State<StringListEditor> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: cs.onSurface,
-            )),
+        Text(
+          widget.label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: cs.onSurface,
+          ),
+        ),
         const SizedBox(height: 8),
         // Input row
         Row(
@@ -63,8 +68,10 @@ class _StringListEditorState extends State<StringListEditor> {
                   hintText: widget.hint,
                   border: const OutlineInputBorder(),
                   isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
                 onSubmitted: (_) => _add(),
               ),
@@ -73,7 +80,7 @@ class _StringListEditorState extends State<StringListEditor> {
             IconButton.filledTonal(
               icon: const Icon(Icons.add, size: 20),
               onPressed: _add,
-              tooltip: 'Add',
+              tooltip: l10n.t('string_list.add'),
             ),
           ],
         ),
@@ -87,8 +94,10 @@ class _StringListEditorState extends State<StringListEditor> {
               children: [
                 for (var i = 0; i < widget.items.length; i++)
                   InputChip(
-                    label: Text(widget.items[i],
-                        style: const TextStyle(fontSize: 12)),
+                    label: Text(
+                      widget.items[i],
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     onDeleted: () => _remove(i),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,

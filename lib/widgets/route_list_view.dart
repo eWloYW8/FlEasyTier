@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/network_instance.dart';
 
 class RouteListView extends StatelessWidget {
@@ -40,7 +41,9 @@ class RouteListView extends StatelessWidget {
       itemCount: sorted.length,
       separatorBuilder: (context, index) => Divider(
         height: 1,
-        color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.28),
+        color: Theme.of(
+          context,
+        ).colorScheme.outlineVariant.withValues(alpha: 0.28),
       ),
       itemBuilder: (context, index) => _RouteRow(
         route: sorted[index],
@@ -63,6 +66,7 @@ class _RouteRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final accent = route.isDirect ? Colors.green : Colors.orange;
     final currentLatency = route.currentLatencyMs(latencyFirstEnabled);
     final currentCost = route.currentCost(latencyFirstEnabled);
@@ -106,7 +110,9 @@ class _RouteRow extends StatelessWidget {
                           child: Text(
                             route.hostname.isNotEmpty
                                 ? route.hostname
-                                : 'Peer ${route.peerId}',
+                                : l10n.t('peer.peer', {
+                                    'id': '${route.peerId}',
+                                  }),
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w400,
@@ -116,7 +122,9 @@ class _RouteRow extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         _RoutePill(
-                          text: route.isDirect ? 'Direct' : 'Relay',
+                          text: route.isDirect
+                              ? l10n.t('common.direct')
+                              : l10n.t('common.relay'),
                           color: accent.shade700,
                           background: accent.withValues(alpha: 0.14),
                         ),
@@ -148,12 +156,12 @@ class _RouteRow extends StatelessWidget {
                         ),
                         _RouteMeta(
                           icon: Icons.route_outlined,
-                          text: 'cost $currentCost',
+                          text: l10n.t('route.cost', {'value': '$currentCost'}),
                         ),
                         if (currentHop > 0 && currentCost > 1)
                           _RouteMeta(
                             icon: Icons.alt_route_outlined,
-                            text: _currentHopLabel(currentHop),
+                            text: _currentHopLabel(context, currentHop),
                           ),
                       ],
                     ),
@@ -171,19 +179,22 @@ class _RouteRow extends StatelessWidget {
                 icon: latencyFirstEnabled
                     ? Icons.check_circle_outline
                     : Icons.radio_button_checked,
-                text: latencyFirstEnabled ? 'Current: latency-first' : 'Current: default',
+                text: latencyFirstEnabled
+                    ? l10n.t('route.current_latency_first')
+                    : l10n.t('route.current_default'),
                 color: latencyFirstEnabled ? Colors.teal : Colors.blueGrey,
               ),
               if (showAlternate)
                 _RouteMeta(
                   icon: Icons.speed_outlined,
-                  text: _latencyFirstLabel(),
+                  text: _latencyFirstLabel(context),
                 ),
               if (showAlternate && route.pathLatencyLatencyFirstMs > 0)
                 _RouteMeta(
                   icon: Icons.timelapse_outlined,
-                  text:
-                      'LF ${route.pathLatencyLatencyFirstMs.toStringAsFixed(1)} ms',
+                  text: l10n.t('route.lf_ms', {
+                    'value': route.pathLatencyLatencyFirstMs.toStringAsFixed(1),
+                  }),
                   color: _latencyColor(route.pathLatencyLatencyFirstMs),
                 ),
               if (route.instId.isNotEmpty)
@@ -193,15 +204,9 @@ class _RouteRow extends StatelessWidget {
                   mono: true,
                 ),
               if (route.udpNatType.isNotEmpty)
-                _RouteMeta(
-                  icon: Icons.swap_vert,
-                  text: route.udpNatType,
-                ),
+                _RouteMeta(icon: Icons.swap_vert, text: route.udpNatType),
               if (route.tcpNatType.isNotEmpty)
-                _RouteMeta(
-                  icon: Icons.sync_alt,
-                  text: route.tcpNatType,
-                ),
+                _RouteMeta(icon: Icons.sync_alt, text: route.tcpNatType),
               ...route.proxyCidrs.map(
                 (cidr) => _CopyableMeta(
                   icon: Icons.account_tree_outlined,
@@ -215,22 +220,29 @@ class _RouteRow extends StatelessWidget {
     );
   }
 
-  String _currentHopLabel(int peerId) => _nextHopLabel(peerId, route.currentCost(latencyFirstEnabled));
+  String _currentHopLabel(BuildContext context, int peerId) =>
+      _nextHopLabel(context, peerId, route.currentCost(latencyFirstEnabled));
 
-  String _nextHopLabel(int peerId, int cost) {
-    if (peerId <= 0 || cost <= 1) return 'Direct';
+  String _nextHopLabel(BuildContext context, int peerId, int cost) {
+    final l10n = context.l10n;
+    if (peerId <= 0 || cost <= 1) return l10n.t('common.direct');
     final name = peerNames[peerId];
     if (name == null || name.isEmpty) {
-      return 'hop $peerId';
+      return l10n.t('route.hop_id', {'id': '$peerId'});
     }
-    return 'hop $peerId $name';
+    return l10n.t('route.hop_named', {'id': '$peerId', 'name': name});
   }
 
-  String _latencyFirstLabel() {
-    if (route.costLatencyFirst <= 1) return 'LF Direct';
+  String _latencyFirstLabel(BuildContext context) {
+    final l10n = context.l10n;
+    if (route.costLatencyFirst <= 1) {
+      return l10n.t('route.lf_name', {'name': l10n.t('common.direct')});
+    }
     final name = peerNames[route.nextHopPeerIdLatencyFirst];
-    if (name == null || name.isEmpty) return 'LF Peer';
-    return 'LF $name';
+    if (name == null || name.isEmpty) {
+      return l10n.t('route.lf_peer');
+    }
+    return l10n.t('route.lf_name', {'name': name});
   }
 }
 
@@ -282,10 +294,7 @@ class _RouteMeta extends StatelessWidget {
 }
 
 class _CopyableMeta extends StatelessWidget {
-  const _CopyableMeta({
-    required this.icon,
-    required this.text,
-  });
+  const _CopyableMeta({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -297,17 +306,13 @@ class _CopyableMeta extends StatelessWidget {
         Clipboard.setData(ClipboardData(text: text));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Copied: $text'),
+            content: Text(context.l10n.t('common.copied', {'value': text})),
             duration: const Duration(seconds: 1),
             behavior: SnackBarBehavior.floating,
           ),
         );
       },
-      child: _RouteMeta(
-        icon: icon,
-        text: text,
-        mono: true,
-      ),
+      child: _RouteMeta(icon: icon, text: text, mono: true),
     );
   }
 }
