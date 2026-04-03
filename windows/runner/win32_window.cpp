@@ -170,6 +170,21 @@ bool Win32Window::UseLegacyCustomFrame() {
   return kUseLegacyCustomFrame;
 }
 
+DWORD Win32Window::GetCreateWindowStyle() {
+  if (UseLegacyCustomFrame()) {
+    return WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX |
+           WS_SYSMENU;
+  }
+  return WS_OVERLAPPEDWINDOW;
+}
+
+DWORD Win32Window::GetCreateWindowExStyle() {
+  if (UseLegacyCustomFrame()) {
+    return WS_EX_APPWINDOW;
+  }
+  return 0;
+}
+
 bool Win32Window::IsWindowMaximized(HWND window) {
   WINDOWPLACEMENT placement{};
   placement.length = sizeof(WINDOWPLACEMENT);
@@ -258,8 +273,9 @@ bool Win32Window::Create(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
-  HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
+  HWND window = CreateWindowEx(
+      GetCreateWindowExStyle(), window_class, title.c_str(),
+      GetCreateWindowStyle(),
       Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
       Scale(size.width, scale_factor), Scale(size.height, scale_factor),
       nullptr, nullptr, GetModuleHandle(nullptr), this);
@@ -303,6 +319,12 @@ Win32Window::MessageHandler(HWND hwnd,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
   switch (message) {
+    case WM_NCACTIVATE:
+      if (UseLegacyCustomFrame()) {
+        return TRUE;
+      }
+      break;
+
     case WM_NCCALCSIZE:
       if (UseLegacyCustomFrame() && wparam == TRUE) {
         if (IsWindowMaximized(hwnd)) {
@@ -314,6 +336,12 @@ Win32Window::MessageHandler(HWND hwnd,
             params->rgrc[0] = monitor_info.rcWork;
           }
         }
+        return 0;
+      }
+      break;
+
+    case WM_NCPAINT:
+      if (UseLegacyCustomFrame()) {
         return 0;
       }
       break;
@@ -359,6 +387,10 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
 
     case WM_DWMCOLORIZATIONCOLORCHANGED:
+      UpdateTheme(hwnd);
+      return 0;
+
+    case WM_DWMCOMPOSITIONCHANGED:
       UpdateTheme(hwnd);
       return 0;
   }
@@ -418,6 +450,14 @@ void Win32Window::OnDestroy() {
 }
 
 void Win32Window::UpdateTheme(HWND const window) {
+  if (UseLegacyCustomFrame()) {
+    const DWMNCRENDERINGPOLICY policy = DWMNCRP_DISABLED;
+    DwmSetWindowAttribute(window, DWMWA_NCRENDERING_POLICY, &policy,
+                          sizeof(policy));
+    const MARGINS margins = {0, 0, 0, 0};
+    DwmExtendFrameIntoClientArea(window, &margins);
+  }
+
   DWORD light_mode;
   DWORD light_mode_size = sizeof(light_mode);
   LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
