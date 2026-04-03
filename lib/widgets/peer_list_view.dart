@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/network_instance.dart';
+import '../utils/color_compat.dart';
 
 class PeerListView extends StatelessWidget {
   const PeerListView({
@@ -32,9 +33,10 @@ class PeerListView extends StatelessWidget {
       itemCount: summaries.length,
       separatorBuilder: (context, index) => Divider(
         height: 1,
-        color: Theme.of(
-          context,
-        ).colorScheme.outlineVariant.withValues(alpha: 0.28),
+        color: withAlphaFactor(
+          Theme.of(context).colorScheme.outlineVariant,
+          0.28,
+        ),
       ),
       itemBuilder: (context, index) => _PeerRow(
         summary: summaries[index],
@@ -197,10 +199,6 @@ class _PeerRowState extends State<_PeerRow> {
       widget.latencyFirstEnabled,
       widget.peerNames,
     );
-    final latencyFirstLabel = s.latencyFirstLabel(
-      widget.latencyFirstEnabled,
-      widget.peerNames,
-    );
 
     return InkWell(
       onTap: () => setState(() => _expanded = !_expanded),
@@ -216,7 +214,7 @@ class _PeerRowState extends State<_PeerRow> {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.14),
+                    color: withAlphaFactor(accent, 0.14),
                     borderRadius: BorderRadius.circular(9),
                   ),
                   child: Icon(
@@ -286,7 +284,7 @@ class _PeerRowState extends State<_PeerRow> {
                                         ? l10n.t('peer.p2p')
                                         : l10n.t('common.relay'),
                                     color: accent.shade700,
-                                    background: accent.withValues(alpha: 0.14),
+                                    background: withAlphaFactor(accent, 0.14),
                                   ),
                                   ...s.tunnelLabels.map(
                                     (label) => _LabelPill(
@@ -329,7 +327,7 @@ class _PeerRowState extends State<_PeerRow> {
                             icon: Icons.alt_route_outlined,
                             text: currentHop.isEmpty
                                 ? l10n.t('common.direct')
-                                : '${l10n.t('peer.peer', {'id': currentHop})}',
+                                : l10n.t('peer.peer', {'id': currentHop}),
                           ),
                           if (s.route != null)
                             _MetaLine(
@@ -424,7 +422,7 @@ class _ConnRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: cs.surfaceContainer,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.16)),
+          border: Border.all(color: withAlphaFactor(cs.outlineVariant, 0.16)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -11,6 +11,7 @@ import '../models/network_instance.dart';
 import '../services/config_storage.dart';
 import '../services/easytier_manager.dart';
 import '../services/platform_vpn.dart';
+import '../utils/color_compat.dart';
 
 class AppState extends ChangeNotifier {
   static const supportedSchemeVariants = <DynamicSchemeVariant>[
@@ -797,7 +798,7 @@ class AppState extends ChangeNotifier {
       AppLogLevel.info,
       'Accent color changed',
       category: 'UI',
-      detail: color.toARGB32().toRadixString(16),
+      detail: colorToArgb32(color).toRadixString(16),
     );
     unawaited(_saveSettings());
     notifyListeners();
@@ -1033,7 +1034,7 @@ class AppState extends ChangeNotifier {
     'core_binary_path': _manager.coreBinaryPath,
     'language': _language.name,
     'theme_mode': _themeMode.index,
-    'seed_color': _seedColor.toARGB32(),
+    'seed_color': colorToArgb32(_seedColor),
     'scheme_variant': _schemeVariant.index,
     'close_to_tray': _closeToTray,
     'log_auto_clear_size_mb': _logAutoClearSizeMb,

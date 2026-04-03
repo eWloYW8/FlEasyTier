@@ -9,6 +9,7 @@ import '../models/network_config.dart';
 import '../models/network_instance.dart';
 import '../providers/app_state.dart';
 import '../services/easytier_manager.dart';
+import '../utils/color_compat.dart';
 import '../widgets/ansi_text.dart';
 import '../widgets/peer_list_view.dart';
 import '../widgets/route_list_view.dart';
@@ -565,7 +566,7 @@ class _OverviewTab extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.3)),
+        border: Border.all(color: withAlphaFactor(cs.outlineVariant, 0.3)),
       ),
       child: Row(
         children: [

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/color_compat.dart';
+
 class StatCard extends StatelessWidget {
   const StatCard({
     super.key,
@@ -23,7 +25,7 @@ class StatCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: cs.surfaceContainerLow,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
+          border: Border.all(color: withAlphaFactor(cs.outlineVariant, 0.35)),
         ),
         child: Row(
           children: [
@@ -56,9 +58,9 @@ class StatCard extends StatelessWidget {
                   Text(
                     value,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.1,
-                        ),
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.1,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

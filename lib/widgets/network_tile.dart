@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/network_config.dart';
 import '../models/network_instance.dart';
+import '../utils/color_compat.dart';
 import 'status_badge.dart';
 
 class NetworkTile extends StatelessWidget {
@@ -256,7 +257,7 @@ class _StatusDot extends StatelessWidget {
         boxShadow: running
             ? [
                 BoxShadow(
-                  color: Colors.green.withValues(alpha: 0.35),
+                  color: withAlphaFactor(Colors.green, 0.35),
                   blurRadius: 6,
                   spreadRadius: 1,
                 ),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/app_log_entry.dart';
 import '../providers/app_state.dart';
+import '../utils/color_compat.dart';
 
 class AppLogsScreen extends StatefulWidget {
   const AppLogsScreen({super.key});
@@ -37,10 +38,10 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
                 color: cs.surface,
                 border: Border(
                   top: BorderSide(
-                    color: cs.outlineVariant.withValues(alpha: 0.35),
+                    color: withAlphaFactor(cs.outlineVariant, 0.35),
                   ),
                   bottom: BorderSide(
-                    color: cs.outlineVariant.withValues(alpha: 0.35),
+                    color: withAlphaFactor(cs.outlineVariant, 0.35),
                   ),
                 ),
               ),
@@ -160,7 +161,7 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
                     itemCount: logs.length,
                     separatorBuilder: (context, index) => Divider(
                       height: 1,
-                      color: cs.outlineVariant.withValues(alpha: 0.3),
+                      color: withAlphaFactor(cs.outlineVariant, 0.3),
                     ),
                     itemBuilder: (context, index) =>
                         _LogRow(entry: logs[index]),

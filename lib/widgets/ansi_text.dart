@@ -6,6 +6,8 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+import '../utils/color_compat.dart';
+
 // ── Standard terminal color palette (dark-background friendly) ──
 
 const _baseColors = <Color>[
@@ -90,7 +92,9 @@ List<TextSpan> parseAnsi(String text, {Color? defaultColor}) {
   for (final match in _ansiRe.allMatches(text)) {
     // Text before this escape
     if (match.start > pos) {
-      spans.add(_buildSpan(text.substring(pos, match.start), state, defaultColor));
+      spans.add(
+        _buildSpan(text.substring(pos, match.start), state, defaultColor),
+      );
     }
     // Apply SGR parameters
     _applySgr(state, match.group(1) ?? '');
@@ -108,7 +112,7 @@ List<TextSpan> parseAnsi(String text, {Color? defaultColor}) {
 TextSpan _buildSpan(String text, _SgrState s, Color? defaultColor) {
   var fg = s.fg ?? defaultColor;
   if (s.dim && fg != null) {
-    fg = fg.withValues(alpha: 0.55);
+    fg = withAlphaFactor(fg, 0.55);
   }
 
   return TextSpan(

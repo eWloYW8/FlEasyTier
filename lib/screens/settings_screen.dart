@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_language.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/app_state.dart';
+import '../utils/color_compat.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -339,7 +340,7 @@ class _ColorPicker extends StatelessWidget {
       runSpacing: 8,
       children: _presets.map((entry) {
         final (color, name) = entry;
-        final isSelected = selected.toARGB32() == color.toARGB32();
+        final isSelected = colorToArgb32(selected) == colorToArgb32(color);
         return Tooltip(
           message: switch (name) {
             'Teal' => l10n.t('settings.color_teal'),
@@ -374,7 +375,7 @@ class _ColorPicker extends StatelessWidget {
                 boxShadow: [
                   if (isSelected)
                     BoxShadow(
-                      color: color.withValues(alpha: 0.4),
+                      color: withAlphaFactor(color, 0.4),
                       blurRadius: 8,
                       spreadRadius: 1,
                     ),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/network_instance.dart';
+import '../utils/color_compat.dart';
 
 class RouteListView extends StatelessWidget {
   const RouteListView({
@@ -41,9 +42,10 @@ class RouteListView extends StatelessWidget {
       itemCount: sorted.length,
       separatorBuilder: (context, index) => Divider(
         height: 1,
-        color: Theme.of(
-          context,
-        ).colorScheme.outlineVariant.withValues(alpha: 0.28),
+        color: withAlphaFactor(
+          Theme.of(context).colorScheme.outlineVariant,
+          0.28,
+        ),
       ),
       itemBuilder: (context, index) => _RouteRow(
         route: sorted[index],
@@ -90,7 +92,7 @@ class _RouteRow extends StatelessWidget {
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.14),
+                  color: withAlphaFactor(accent, 0.14),
                   borderRadius: BorderRadius.circular(9),
                 ),
                 child: Icon(
@@ -126,7 +128,7 @@ class _RouteRow extends StatelessWidget {
                               ? l10n.t('common.direct')
                               : l10n.t('common.relay'),
                           color: accent.shade700,
-                          background: accent.withValues(alpha: 0.14),
+                          background: withAlphaFactor(accent, 0.14),
                         ),
                       ],
                     ),

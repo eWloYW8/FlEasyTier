@@ -14,6 +14,7 @@ import 'screens/about_screen.dart';
 import 'screens/app_logs_screen.dart';
 import 'screens/networks_screen.dart';
 import 'screens/settings_screen.dart';
+import 'utils/color_compat.dart';
 
 class FlEasyTierApp extends StatelessWidget {
   const FlEasyTierApp({super.key});
@@ -879,7 +880,7 @@ class _ErrorToastCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: cs.errorContainer,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cs.error.withValues(alpha: 0.25)),
+          border: Border.all(color: withAlphaFactor(cs.error, 0.25)),
         ),
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -892,7 +893,7 @@ class _ErrorToastCard extends StatelessWidget {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: cs.error.withValues(alpha: 0.14),
+                    color: withAlphaFactor(cs.error, 0.14),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
@@ -920,7 +921,7 @@ class _ErrorToastCard extends StatelessWidget {
                       Text(
                         _formatTimestamp(entry.timestamp),
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: cs.onErrorContainer.withValues(alpha: 0.72),
+                          color: withAlphaFactor(cs.onErrorContainer, 0.72),
                         ),
                       ),
                     ],
@@ -935,7 +936,7 @@ class _ErrorToastCard extends StatelessWidget {
                     child: Icon(
                       Icons.close_rounded,
                       size: 16,
-                      color: cs.onErrorContainer.withValues(alpha: 0.8),
+                      color: withAlphaFactor(cs.onErrorContainer, 0.8),
                     ),
                   ),
                 ),
@@ -958,7 +959,7 @@ class _ErrorToastCard extends StatelessWidget {
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: cs.onErrorContainer.withValues(alpha: 0.86),
+                  color: withAlphaFactor(cs.onErrorContainer, 0.86),
                   height: 1.3,
                 ),
               ),
@@ -1017,9 +1018,9 @@ class _WindowActionButton extends StatelessWidget {
         ? cs.primary
         : cs.onSurfaceVariant;
     final backgroundColor = danger
-        ? cs.errorContainer.withValues(alpha: 0.35)
+        ? withAlphaFactor(cs.errorContainer, 0.35)
         : active
-        ? cs.primaryContainer.withValues(alpha: 0.7)
+        ? withAlphaFactor(cs.primaryContainer, 0.7)
         : Colors.transparent;
 
     return Tooltip(

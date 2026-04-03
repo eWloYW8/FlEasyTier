@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/app_state.dart';
+import '../utils/color_compat.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -51,7 +52,7 @@ class _RepoLinkTile extends StatelessWidget {
     }
 
     return Material(
-      color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+      color: withAlphaFactor(cs.surfaceContainerHighest, 0.35),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),

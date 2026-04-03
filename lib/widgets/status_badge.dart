@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../utils/color_compat.dart';
 
 class StatusBadge extends StatelessWidget {
   const StatusBadge({super.key, required this.running, this.compact = false});
@@ -18,7 +19,7 @@ class StatusBadge extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: running
-              ? Colors.green.withValues(alpha: 0.12)
+              ? withAlphaFactor(Colors.green, 0.12)
               : cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(20),
         ),
@@ -38,7 +39,7 @@ class StatusBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: running
-            ? Colors.green.withValues(alpha: 0.12)
+            ? withAlphaFactor(Colors.green, 0.12)
             : cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(20),
       ),

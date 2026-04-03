@@ -7,6 +7,9 @@ on:
 
 env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
+  FLUTTER_VERSION_DEFAULT: "3.38.4"
+  FLUTTER_VERSION_WINDOWS_WIN7: "3.24.5"
+  RUSTDESK_WINDOWS_ENGINE_URL: "https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip"
 
 jobs:
   build:
@@ -20,27 +23,33 @@ jobs:
             arch: amd64
             artifact_suffix: windows-amd64
             yy_thunks: false
+            flutter_version: "3.38.4"
           - platform: windows
             os: windows-latest
             arch: amd64
             artifact_suffix: windows-amd64-win7
             yy_thunks: true
+            flutter_version: "3.24.5"
           - platform: linux
             os: ubuntu-22.04
             arch: amd64
             artifact_suffix: linux-amd64
+            flutter_version: "3.38.4"
           - platform: android
             os: ubuntu-22.04
             arch: universal
             artifact_suffix: android
+            flutter_version: "3.38.4"
           - platform: macos
             os: macos-15
             arch: amd64
             artifact_suffix: macos-amd64
+            flutter_version: "3.38.4"
           - platform: macos
             os: macos-latest
             arch: arm64
             artifact_suffix: macos-arm64
+            flutter_version: "3.38.4"
 
     steps:
       - name: Checkout
@@ -86,7 +95,30 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ matrix.flutter_version }}
           cache: true
+
+      - name: Replace Windows Engine For Win7 Build
+        if: matrix.platform == 'windows' && matrix.yy_thunks == true
+        shell: pwsh
+        env:
+          RUSTDESK_WINDOWS_ENGINE_URL: ${{ env.RUSTDESK_WINDOWS_ENGINE_URL }}
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+
+          $flutterExe = (Get-Command flutter).Source
+          $flutterBin = Split-Path $flutterExe -Parent
+          $flutterRoot = Split-Path $flutterBin -Parent
+          $engineDir = Join-Path $flutterRoot "bin\cache\artifacts\engine\windows-x64-release"
+
+          $downloadZip = Join-Path $env:RUNNER_TEMP "windows-x64-release.zip"
+          $extractDir = Join-Path $env:RUNNER_TEMP "windows-x64-release"
+
+          Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+          Invoke-WebRequest -Uri $env:RUSTDESK_WINDOWS_ENGINE_URL -OutFile $downloadZip
+          Expand-Archive -Path $downloadZip -DestinationPath $extractDir -Force
+          Copy-Item -Path (Join-Path $extractDir "*") -Destination $engineDir -Recurse -Force
 
       - name: Flutter Dependencies
         run: |
