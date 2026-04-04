@@ -171,6 +171,17 @@ class SettingsScreen extends StatelessWidget {
             ),
 
           _SettingsCard(
+            icon: Icons.sync_rounded,
+            title: l10n.t('settings.poll_interval'),
+            children: [
+              _PollIntervalSlider(
+                value: state.pollIntervalSeconds,
+                onChanged: state.setPollIntervalSeconds,
+              ),
+            ],
+          ),
+
+          _SettingsCard(
             icon: Icons.receipt_long_outlined,
             title: l10n.t('nav.logs'),
             children: [
@@ -682,5 +693,77 @@ class _IntFieldState extends State<_IntField> {
       );
     }
     widget.onChanged(normalized);
+  }
+}
+
+class _PollIntervalSlider extends StatefulWidget {
+  const _PollIntervalSlider({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_PollIntervalSlider> createState() => _PollIntervalSliderState();
+}
+
+class _PollIntervalSliderState extends State<_PollIntervalSlider> {
+  late double _value;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _PollIntervalSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((oldWidget.value - widget.value).abs() >= 0.001) {
+      _value = widget.value;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final label = _formatValue(_value);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(l10n.t('settings.poll_interval'))),
+            Text(
+              l10n.t('settings.poll_interval_value', {'value': label}),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        Slider(
+          value: _value,
+          min: 0.5,
+          max: 10,
+          divisions: 19,
+          label: l10n.t('settings.poll_interval_value', {'value': label}),
+          onChanged: (value) {
+            setState(() {
+              _value = value;
+            });
+          },
+          onChangeEnd: widget.onChanged,
+        ),
+      ],
+    );
+  }
+
+  String _formatValue(double value) {
+    final rounded = (value * 2).round() / 2;
+    if ((rounded - rounded.roundToDouble()).abs() < 0.001) {
+      return rounded.toStringAsFixed(0);
+    }
+    return rounded.toStringAsFixed(1);
   }
 }

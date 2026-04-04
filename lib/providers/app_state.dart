@@ -23,6 +23,9 @@ class AppState extends ChangeNotifier {
   final ConfigStorage _storage = ConfigStorage();
   final EasyTierManager _manager = EasyTierManager();
   Timer? _pollTimer;
+  static const double _minPollIntervalSeconds = 0.5;
+  static const double _maxPollIntervalSeconds = 10.0;
+  static const double _defaultPollIntervalSeconds = 1.0;
 
   List<NetworkConfig> _configs = [];
   final Map<String, NetworkInstance> _instances = {};
@@ -33,6 +36,7 @@ class AppState extends ChangeNotifier {
   DynamicSchemeVariant _schemeVariant = DynamicSchemeVariant.tonalSpot;
   bool _closeToTray = false;
   int _logAutoClearSizeMb = 10;
+  double _pollIntervalSeconds = _defaultPollIntervalSeconds;
   final List<AppLogEntry> _appLogs = [];
   final StreamController<AppLogEntry> _errorLogController =
       StreamController<AppLogEntry>.broadcast();
@@ -51,6 +55,7 @@ class AppState extends ChangeNotifier {
   DynamicSchemeVariant get schemeVariant => _schemeVariant;
   bool get closeToTray => _closeToTray;
   int get logAutoClearSizeMb => _logAutoClearSizeMb;
+  double get pollIntervalSeconds => _pollIntervalSeconds;
   List<AppLogEntry> get appLogs => List.unmodifiable(_appLogs);
   Stream<AppLogEntry> get errorLogStream => _errorLogController.stream;
   EasyTierManager get manager => _manager;
@@ -100,6 +105,9 @@ class AppState extends ChangeNotifier {
     _closeToTray = settings['close_to_tray'] as bool? ?? false;
     _logAutoClearSizeMb = (settings['log_auto_clear_size_mb'] as int? ?? 10)
         .clamp(0, 10240);
+    _pollIntervalSeconds = _normalizePollInterval(
+      (settings['poll_interval_seconds'] as num?)?.toDouble(),
+    );
 
     await _manager.init();
     _manager.onLog = addLog;
@@ -139,10 +147,7 @@ class AppState extends ChangeNotifier {
       _selectedConfigId = _configs.first.id;
     }
 
-    _pollTimer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => _pollStatus(),
-    );
+    _restartPollTimer();
     await _pollStatus();
 
     if (_supportsSystemService) {
@@ -405,7 +410,7 @@ class AppState extends ChangeNotifier {
       );
       notifyListeners();
 
-      Future.delayed(const Duration(seconds: 2), () {
+      Future.delayed(_pollInterval, () {
         _pollSingle(config);
       });
       return null;
@@ -437,7 +442,7 @@ class AppState extends ChangeNotifier {
     );
     notifyListeners();
 
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(_pollInterval, () {
       _pollSingle(config);
     });
 
@@ -854,6 +859,22 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setPollIntervalSeconds(double value) {
+    final normalized = _normalizePollInterval(value);
+    if ((_pollIntervalSeconds - normalized).abs() < 0.001) {
+      return;
+    }
+    _pollIntervalSeconds = normalized;
+    addLog(
+      AppLogLevel.info,
+      'Set RPC polling interval to ${normalized.toStringAsFixed(normalized < 1 ? 1 : 0)}s',
+      category: 'RPC',
+    );
+    _restartPollTimer();
+    unawaited(_saveSettings());
+    notifyListeners();
+  }
+
   Future<int> clearLocalLogs() async {
     final result = await _manager.clearAllLocalLogs(_configs);
     addLog(
@@ -1038,7 +1059,24 @@ class AppState extends ChangeNotifier {
     'scheme_variant': _schemeVariant.index,
     'close_to_tray': _closeToTray,
     'log_auto_clear_size_mb': _logAutoClearSizeMb,
+    'poll_interval_seconds': _pollIntervalSeconds,
   });
+
+  Duration get _pollInterval =>
+      Duration(milliseconds: (_pollIntervalSeconds * 1000).round());
+
+  void _restartPollTimer() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _pollStatus());
+  }
+
+  double _normalizePollInterval(double? value) {
+    final normalized = value ?? _defaultPollIntervalSeconds;
+    return normalized.clamp(
+      _minPollIntervalSeconds,
+      _maxPollIntervalSeconds,
+    );
+  }
 
   int _androidInt(dynamic value, {int fallback = 0}) {
     if (value is int) return value;
