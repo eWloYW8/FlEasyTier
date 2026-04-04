@@ -69,14 +69,23 @@ class MainActivity : FlutterActivity() {
 
     private fun resolveDeviceName(): String {
         val candidates = listOf(
-            Settings.Global.getString(contentResolver, "device_name"),
-            Settings.Secure.getString(contentResolver, "bluetooth_name"),
+            readSettingSafely { Settings.Global.getString(contentResolver, "device_name") },
             Build.MODEL,
             Build.DEVICE,
             Build.PRODUCT,
         )
 
         return candidates.firstOrNull { !it.isNullOrBlank() }?.trim() ?: "Android"
+    }
+
+    private inline fun readSettingSafely(reader: () -> String?): String? {
+        return try {
+            reader()
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun prepareVpn(result: MethodChannel.Result) {
