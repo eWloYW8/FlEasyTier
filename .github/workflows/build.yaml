@@ -65,11 +65,34 @@ jobs:
         with:
           workspaces: third_party/EasyTier
 
-      - name: Install Linux Dependencies
-        if: matrix.platform == 'linux' || matrix.platform == 'android'
+      - name: Install Linux Build Toolchain
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libgtk-3-dev libayatana-appindicator3-dev pkg-config protobuf-compiler
+          sudo apt-get install -y \
+            binutils \
+            build-essential \
+            clang \
+            cmake \
+            mold \
+            ninja-build \
+            pkg-config \
+            protobuf-compiler \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Install Android Dependencies
+        if: matrix.platform == 'android'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils \
+            build-essential \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            protobuf-compiler
 
       - name: Setup Java
         if: matrix.platform == 'android'
