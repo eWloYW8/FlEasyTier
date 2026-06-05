@@ -221,38 +221,49 @@ class RpcError {
 ///   (the server registers services with proto_name = service proto_name).
 /// - `methodIndex` is **1-based** (generated enum starts at idx+1).
 abstract final class EtRpc {
-  // PeerManageRpc — methods: ListPeer=1, ListRoute=2, DumpRoute=3,
-  //   ListForeignNetwork=4, ListGlobalForeignNetwork=5, ShowNodeInfo=6,
-  //   GetForeignNetworkSummary=7
+  // PeerManageRpc — methods: ListPeer=1, ListPublicIpv6Info=2,
+  //   ListRoute=3, DumpRoute=4, ListForeignNetwork=5,
+  //   ListGlobalForeignNetwork=6, ShowNodeInfo=7,
+  //   GetForeignNetworkSummary=8
   static const listPeer = RpcDescriptor(
     protoName: 'PeerManageRpc',
     serviceName: 'PeerManageRpc',
     methodIndex: 1,
   );
-  static const listRoute = RpcDescriptor(
+  static const listPublicIpv6Info = RpcDescriptor(
     protoName: 'PeerManageRpc',
     serviceName: 'PeerManageRpc',
     methodIndex: 2,
   );
-  static const dumpRoute = RpcDescriptor(
+  static const listRoute = RpcDescriptor(
     protoName: 'PeerManageRpc',
     serviceName: 'PeerManageRpc',
     methodIndex: 3,
   );
-  static const listForeignNetwork = RpcDescriptor(
+  static const dumpRoute = RpcDescriptor(
     protoName: 'PeerManageRpc',
     serviceName: 'PeerManageRpc',
     methodIndex: 4,
   );
-  static const listGlobalForeignNetwork = RpcDescriptor(
+  static const listForeignNetwork = RpcDescriptor(
     protoName: 'PeerManageRpc',
     serviceName: 'PeerManageRpc',
     methodIndex: 5,
   );
-  static const showNodeInfo = RpcDescriptor(
+  static const listGlobalForeignNetwork = RpcDescriptor(
     protoName: 'PeerManageRpc',
     serviceName: 'PeerManageRpc',
     methodIndex: 6,
+  );
+  static const showNodeInfo = RpcDescriptor(
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 7,
+  );
+  static const getForeignNetworkSummary = RpcDescriptor(
+    protoName: 'PeerManageRpc',
+    serviceName: 'PeerManageRpc',
+    methodIndex: 8,
   );
 
   // ConnectorManageRpc — ListConnector=1
