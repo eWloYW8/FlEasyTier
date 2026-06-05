@@ -28,17 +28,20 @@ try {
   cargo install cargo-ndk
 }
 
-foreach ($androidTarget in $androidTargets) {
-  if (-not $targetMap.ContainsKey($androidTarget)) {
-    throw "Unsupported Android ABI: $androidTarget"
-  }
-  rustup target add $targetMap[$androidTarget] | Out-Null
-}
-
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 
 Push-Location $easyTierRoot
 try {
+  $rustToolchain = (rustup show active-toolchain).Split(' ')[0]
+  Write-Host "Using Rust toolchain $rustToolchain for EasyTier Android build"
+
+  foreach ($androidTarget in $androidTargets) {
+    if (-not $targetMap.ContainsKey($androidTarget)) {
+      throw "Unsupported Android ABI: $androidTarget"
+    }
+    rustup target add --toolchain $rustToolchain $targetMap[$androidTarget] | Out-Null
+  }
+
   foreach ($androidTarget in $androidTargets) {
     $rustTarget = $targetMap[$androidTarget]
     Write-Host "Building easytier-ffi for $androidTarget ($rustTarget)"

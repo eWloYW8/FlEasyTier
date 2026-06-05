@@ -25,18 +25,22 @@ if ! cargo ndk --version >/dev/null 2>&1; then
   cargo install cargo-ndk
 fi
 
+pushd "${EASYTIER_ROOT}" >/dev/null
+rust_toolchain="$(rustup show active-toolchain | awk '{print $1}')"
+echo "Using Rust toolchain ${rust_toolchain} for EasyTier Android build"
+
 for android_target in "${ANDROID_TARGETS[@]}"; do
   rust_target="${TARGET_MAP[$android_target]:-}"
   if [[ -z "${rust_target}" ]]; then
     echo "Unsupported Android ABI: ${android_target}" >&2
+    popd >/dev/null
     exit 1
   fi
-  rustup target add "${rust_target}"
+  rustup target add --toolchain "${rust_toolchain}" "${rust_target}"
 done
 
 mkdir -p "${OUTPUT_ROOT}"
 
-pushd "${EASYTIER_ROOT}" >/dev/null
 for android_target in "${ANDROID_TARGETS[@]}"; do
   rust_target="${TARGET_MAP[$android_target]}"
   echo "Building easytier-ffi for ${android_target} (${rust_target})"
