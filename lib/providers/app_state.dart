@@ -301,6 +301,8 @@ class AppState extends ChangeNotifier {
         id: current.id,
         autoStart: current.autoStart,
         serviceEnabled: current.serviceEnabled,
+        customCliArgsEnabled: current.customCliArgsEnabled,
+        customCliArgs: current.customCliArgs,
         rpcPort: current.rpcPort,
         rpcPortalWhitelist: current.rpcPortalWhitelist,
       );

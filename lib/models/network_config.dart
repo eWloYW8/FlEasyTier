@@ -168,6 +168,8 @@ class NetworkConfig {
 
   bool autoStart;
   bool serviceEnabled;
+  bool customCliArgsEnabled;
+  String customCliArgs;
   int rpcPort;
   List<String> rpcPortalWhitelist;
 
@@ -176,6 +178,8 @@ class NetworkConfig {
     Map<String, dynamic>? tomlData,
     this.autoStart = false,
     this.serviceEnabled = false,
+    this.customCliArgsEnabled = false,
+    this.customCliArgs = '',
     this.rpcPort = 15888,
     List<String>? rpcPortalWhitelist,
   })  : id = _normalizeId(id),
@@ -191,6 +195,9 @@ class NetworkConfig {
       tomlData: rawToml is Map ? rawToml.cast<String, dynamic>() : null,
       autoStart: json['auto_start'] as bool? ?? false,
       serviceEnabled: json['service_enabled'] as bool? ?? false,
+      customCliArgsEnabled:
+          json['custom_cli_args_enabled'] as bool? ?? false,
+      customCliArgs: _asString(json['custom_cli_args']),
       rpcPort: json['rpc_port'] as int? ?? 15888,
       rpcPortalWhitelist: _asStringList(json['rpc_portal_whitelist']),
     );
@@ -201,6 +208,8 @@ class NetworkConfig {
     String? id,
     bool autoStart = false,
     bool serviceEnabled = false,
+    bool customCliArgsEnabled = false,
+    String customCliArgs = '',
     int rpcPort = 15888,
     List<String>? rpcPortalWhitelist,
   }) {
@@ -212,6 +221,8 @@ class NetworkConfig {
       tomlData: parsed,
       autoStart: autoStart,
       serviceEnabled: serviceEnabled,
+      customCliArgsEnabled: customCliArgsEnabled,
+      customCliArgs: customCliArgs,
       rpcPort: rpcPort,
       rpcPortalWhitelist: rpcPortalWhitelist,
     );
@@ -221,6 +232,8 @@ class NetworkConfig {
         'id': id,
         'auto_start': autoStart,
         'service_enabled': serviceEnabled,
+        'custom_cli_args_enabled': customCliArgsEnabled,
+        'custom_cli_args': customCliArgs,
         'rpc_port': rpcPort,
         'rpc_portal_whitelist': List<String>.from(rpcPortalWhitelist),
         'toml_data': tomlData,
@@ -239,6 +252,8 @@ class NetworkConfig {
   NetworkConfig copyWith({
     bool? autoStart,
     bool? serviceEnabled,
+    bool? customCliArgsEnabled,
+    String? customCliArgs,
     int? rpcPort,
     List<String>? rpcPortalWhitelist,
     Map<String, dynamic>? tomlData,
@@ -248,6 +263,9 @@ class NetworkConfig {
       tomlData: tomlData ?? _tomlData,
       autoStart: autoStart ?? this.autoStart,
       serviceEnabled: serviceEnabled ?? this.serviceEnabled,
+      customCliArgsEnabled:
+          customCliArgsEnabled ?? this.customCliArgsEnabled,
+      customCliArgs: customCliArgs ?? this.customCliArgs,
       rpcPort: rpcPort ?? this.rpcPort,
       rpcPortalWhitelist: rpcPortalWhitelist ?? this.rpcPortalWhitelist,
     );

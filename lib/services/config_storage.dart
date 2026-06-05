@@ -49,6 +49,9 @@ class ConfigStorage {
           id: meta['id'] as String? ?? configId,
           autoStart: meta['auto_start'] as bool? ?? false,
           serviceEnabled: meta['service_enabled'] as bool? ?? false,
+          customCliArgsEnabled:
+              meta['custom_cli_args_enabled'] as bool? ?? false,
+          customCliArgs: meta['custom_cli_args']?.toString() ?? '',
           rpcPort: meta['rpc_port'] as int? ?? 15888,
           rpcPortalWhitelist:
               (meta['rpc_portal_whitelist'] as List?)?.map((e) => '$e').toList(),
@@ -84,6 +87,8 @@ class ConfigStorage {
         'id': config.id,
         'auto_start': config.autoStart,
         'service_enabled': config.serviceEnabled,
+        'custom_cli_args_enabled': config.customCliArgsEnabled,
+        'custom_cli_args': config.customCliArgs,
         'rpc_port': config.rpcPort,
         'rpc_portal_whitelist': config.rpcPortalWhitelist,
       }));

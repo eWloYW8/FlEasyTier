@@ -20,6 +20,15 @@ typedef AppLogWriter =
       String? detail,
     });
 
+class CliArgsParseException implements Exception {
+  const CliArgsParseException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class EasyTierManager {
   String? coreBinaryPath;
   late String _configDir;
@@ -37,6 +46,72 @@ class EasyTierManager {
   void Function(String configId, int exitCode, String? detail)?
   onInstanceStopped;
   AppLogWriter? onLog;
+
+  static List<String> parseCliArgs(String input) {
+    final args = <String>[];
+    final buffer = StringBuffer();
+    String? quote;
+    var tokenStarted = false;
+
+    for (var i = 0; i < input.length; i++) {
+      final ch = input[i];
+      if (quote != null) {
+        if (ch == quote) {
+          quote = null;
+          tokenStarted = true;
+          continue;
+        }
+        if (quote == '"' && ch == '\\' && i + 1 < input.length) {
+          buffer.write(input[++i]);
+          tokenStarted = true;
+          continue;
+        }
+        buffer.write(ch);
+        tokenStarted = true;
+        continue;
+      }
+
+      if (ch.trim().isEmpty) {
+        if (tokenStarted) {
+          args.add(buffer.toString());
+          buffer.clear();
+          tokenStarted = false;
+        }
+        continue;
+      }
+      if (ch == '"' || ch == "'") {
+        quote = ch;
+        tokenStarted = true;
+        continue;
+      }
+      buffer.write(ch);
+      tokenStarted = true;
+    }
+
+    if (quote != null) {
+      throw CliArgsParseException('Unclosed quote in custom arguments');
+    }
+    if (tokenStarted) {
+      args.add(buffer.toString());
+    }
+    return args;
+  }
+
+  static String formatCliArgs(List<String> args) =>
+      args.map(_quoteCliArg).join(' ');
+
+  static String _quoteCliArg(String value) {
+    if (value.isEmpty) return '""';
+    final needsQuote = value.split('').any((ch) => ch.trim().isEmpty) ||
+        value.contains('"') ||
+        value.contains("'");
+    if (!needsQuote) return value;
+    if (!value.contains("'")) {
+      return "'$value'";
+    }
+    final escaped = value.replaceAll('\\', '\\\\').replaceAll('"', r'\"');
+    return '"$escaped"';
+  }
 
   Future<void> init() async {
     final appDir = await getApplicationSupportDirectory();
@@ -190,7 +265,7 @@ class EasyTierManager {
 
     try {
       final usePrivileged = await _shouldUsePrivilegedLocalRun(config);
-      final args = _localCliArgs(
+      final args = _effectiveLocalCliArgs(
         config,
         includeFileLoggingFallback: usePrivileged,
       );
@@ -198,7 +273,7 @@ class EasyTierManager {
         AppLogLevel.info,
         'Starting network instance ${config.displayName}',
         category: 'Instance',
-        detail: args.join(' '),
+        detail: formatCliArgs(args),
       );
 
       if (usePrivileged) {
@@ -358,6 +433,10 @@ class EasyTierManager {
     if (Platform.isAndroid) {
       return null;
     }
+    final customArgsError = validateCustomCliArgs(config);
+    if (customArgsError != null) {
+      return customArgsError;
+    }
     if (coreBinaryPath == null) {
       return 'EasyTier core binary not found';
     }
@@ -397,6 +476,19 @@ class EasyTierManager {
 
   String serviceNameFor(NetworkConfig config) => 'fleasytier-${config.id}';
 
+  String? validateCustomCliArgs(NetworkConfig config) {
+    if (!config.customCliArgsEnabled) return null;
+    try {
+      final args = _customCliArgs(config);
+      if (args.isEmpty) return 'Custom arguments cannot be empty';
+      return null;
+    } on CliArgsParseException catch (e) {
+      return 'Invalid custom arguments: ${e.message}';
+    } catch (e) {
+      return 'Invalid custom arguments: $e';
+    }
+  }
+
   Future<ManagedServiceStatus> getServiceStatus(NetworkConfig config) async {
     try {
       final backend = await _detectServiceBackend();
@@ -419,6 +511,8 @@ class EasyTierManager {
 
   Future<String> installService(NetworkConfig config) async {
     if (coreBinaryPath == null) return 'EasyTier core binary not found';
+    final customArgsError = validateCustomCliArgs(config);
+    if (customArgsError != null) return customArgsError;
     await _ensureServiceLogDir(config);
     onLog?.call(
       AppLogLevel.info,
@@ -919,7 +1013,7 @@ class EasyTierManager {
   }
 
   String _windowsBinPath(NetworkConfig config) {
-    final allArgs = [coreBinaryPath!, ..._serviceCliArgs(config)];
+    final allArgs = [coreBinaryPath!, ..._effectiveServiceCliArgs(config)];
     return allArgs.map(_quoteWindowsArg).join(' ');
   }
 
@@ -1066,7 +1160,7 @@ class EasyTierManager {
       '/etc/systemd/system/$serviceName.service';
 
   String _makeSystemdUnit(NetworkConfig config) {
-    final args = _serviceCliArgs(config).map(_systemdEscape).join(' ');
+    final args = _effectiveServiceCliArgs(config).map(_systemdEscape).join(' ');
     final targetApp = _systemdEscape(coreBinaryPath!);
     final workDir = _systemdEscape(_configDir);
     final description =
@@ -1207,7 +1301,7 @@ class EasyTierManager {
   }
 
   String _makeOpenRcScript(NetworkConfig config) {
-    final args = _serviceCliArgs(config).map(_shellEscape).join(' ');
+    final args = _effectiveServiceCliArgs(config).map(_shellEscape).join(' ');
     final targetApp = _shellEscape(coreBinaryPath!);
     final workDir = _shellEscape(_configDir);
     final description = _shellEscape(
@@ -1401,7 +1495,7 @@ class EasyTierManager {
   String _makeLaunchdPlist(NetworkConfig config) {
     final args = [
       coreBinaryPath!,
-      ..._serviceCliArgs(config),
+      ..._effectiveServiceCliArgs(config),
     ].map((arg) => '    <string>${_xmlEscape(arg)}</string>').join('\n');
 
     return [
@@ -1592,6 +1686,61 @@ class EasyTierManager {
     }
     return output.toString();
   }
+
+  String generatedCliArgsText(
+    NetworkConfig config, {
+    bool forService = false,
+    bool includeFileLoggingFallback = false,
+  }) {
+    final args = forService
+        ? _serviceCliArgs(config)
+        : _localCliArgs(
+            config,
+            includeFileLoggingFallback: includeFileLoggingFallback,
+          );
+    return formatCliArgs(args);
+  }
+
+  List<String> _effectiveServiceCliArgs(NetworkConfig config) {
+    if (config.customCliArgsEnabled) {
+      return _customCliArgs(config);
+    }
+    return _serviceCliArgs(config);
+  }
+
+  List<String> _effectiveLocalCliArgs(
+    NetworkConfig config, {
+    bool includeFileLoggingFallback = false,
+  }) {
+    if (config.customCliArgsEnabled) {
+      return _customCliArgs(config);
+    }
+    return _localCliArgs(
+      config,
+      includeFileLoggingFallback: includeFileLoggingFallback,
+    );
+  }
+
+  List<String> _customCliArgs(NetworkConfig config) {
+    final args = parseCliArgs(config.customCliArgs);
+    if (args.isNotEmpty && _looksLikeCoreExecutable(args.first)) {
+      return args.sublist(1);
+    }
+    return args;
+  }
+
+  bool _looksLikeCoreExecutable(String value) {
+    final normalized = _normalizeCommandPath(value);
+    final corePath = coreBinaryPath == null
+        ? ''
+        : _normalizeCommandPath(coreBinaryPath!);
+    if (corePath.isNotEmpty && normalized == corePath) return true;
+    final name = normalized.split('/').last;
+    return name == 'easytier-core' || name == 'easytier-core.exe';
+  }
+
+  String _normalizeCommandPath(String value) =>
+      value.trim().replaceAll('\\', '/').toLowerCase();
 
   List<String> _serviceCliArgs(NetworkConfig config) {
     final args = <String>[

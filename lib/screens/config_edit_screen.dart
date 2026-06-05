@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/network_config.dart';
 import '../providers/app_state.dart';
+import '../services/easytier_manager.dart';
 import '../widgets/port_forward_editor.dart';
 import '../widgets/string_list_editor.dart';
 
@@ -24,12 +27,20 @@ class ConfigEditScreen extends StatefulWidget {
 
 class _ConfigEditScreenState extends State<ConfigEditScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _customArgsController = TextEditingController();
   late NetworkConfig _cfg;
 
   @override
   void initState() {
     super.initState();
     _cfg = NetworkConfig.fromJson(widget.config.toJson());
+    _customArgsController.text = _cfg.customCliArgs;
+  }
+
+  @override
+  void dispose() {
+    _customArgsController.dispose();
+    super.dispose();
   }
 
   void _save() {
@@ -49,6 +60,9 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
     if (!_cfg.enableRelayNetworkWhitelist) {
       _cfg.relayNetworkWhitelist = const ['*'];
     }
+    if (!_supportsCustomCliArgs) {
+      _cfg.customCliArgsEnabled = false;
+    }
 
     final state = context.read<AppState>();
     if (widget.isNew) {
@@ -59,9 +73,46 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
     Navigator.of(context).pop();
   }
 
+  bool get _supportsCustomCliArgs =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  String _generatedCliArgsText() {
+    return context.read<AppState>().manager.generatedCliArgsText(
+          _cfg,
+          forService: _cfg.serviceEnabled,
+        );
+  }
+
+  void _syncCustomArgsController() {
+    if (!_supportsCustomCliArgs || _cfg.customCliArgsEnabled) return;
+    final generated = _generatedCliArgsText();
+    if (_customArgsController.text == generated) return;
+    _customArgsController.value = TextEditingValue(
+      text: generated,
+      selection: TextSelection.collapsed(offset: generated.length),
+    );
+  }
+
+  void _setCustomCliArgsEnabled(bool value) {
+    _formKey.currentState?.save();
+    setState(() {
+      _cfg.customCliArgsEnabled = value;
+      if (value) {
+        final next = _cfg.customCliArgs.trim().isEmpty
+            ? _generatedCliArgsText()
+            : _cfg.customCliArgs;
+        _cfg.customCliArgs = next;
+        _customArgsController.text = next;
+      } else {
+        _customArgsController.text = _generatedCliArgsText();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    _syncCustomArgsController();
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -565,6 +616,52 @@ class _ConfigEditScreenState extends State<ConfigEditScreen> {
                     onChanged: (value) =>
                         setState(() => _cfg.autoStart = value),
                   ),
+                  if (_supportsCustomCliArgs) ...[
+                    _ToggleRow(
+                      title: l10n.t('edit.custom_cli_args'),
+                      value: _cfg.customCliArgsEnabled,
+                      onChanged: _setCustomCliArgsEnabled,
+                    ),
+                    TextFormField(
+                      controller: _customArgsController,
+                      readOnly: !_cfg.customCliArgsEnabled,
+                      minLines: 3,
+                      maxLines: 6,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                      textAlignVertical: TextAlignVertical.top,
+                      validator: (value) {
+                        if (!_cfg.customCliArgsEnabled) return null;
+                        final text = value ?? '';
+                        try {
+                          final args = EasyTierManager.parseCliArgs(text);
+                          if (args.isEmpty ||
+                              (args.length == 1 &&
+                                  _looksLikeCoreExecutableInput(args.first))) {
+                            return l10n.t('edit.custom_cli_args_required');
+                          }
+                        } on CliArgsParseException catch (e) {
+                          return l10n.t(
+                            'edit.custom_cli_args_invalid',
+                            {'error': e.message},
+                          );
+                        }
+                        return null;
+                      },
+                      onSaved: (value) {
+                        if (_cfg.customCliArgsEnabled) {
+                          _cfg.customCliArgs = value ?? '';
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: l10n.t('edit.custom_cli_args_value'),
+                        alignLabelWithHint: true,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 80),
@@ -741,4 +838,10 @@ class _FlagChip extends StatelessWidget {
       onSelected: onChanged,
     );
   }
+}
+
+bool _looksLikeCoreExecutableInput(String value) {
+  final normalized = value.trim().replaceAll('\\', '/').toLowerCase();
+  final name = normalized.split('/').last;
+  return name == 'easytier-core' || name == 'easytier-core.exe';
 }
