@@ -1345,21 +1345,35 @@ class EasyTierManager {
     return ManagedServiceStatus.stopped;
   }
 
+  Future<bool> _isLaunchdServiceLoaded(NetworkConfig config) async {
+    final label = _launchdLabel(config);
+    final result = await _run(
+      'launchctl',
+      ['print', 'system/$label'],
+      allowPrivilegeRetry: true,
+    );
+    return result.exitCode == 0;
+  }
+
   Future<String> _installLaunchdService(NetworkConfig config) async {
     final plistPath = _launchdPlistPath(config);
     final plist = File(plistPath);
     final status = await _getLaunchdServiceStatus(config);
+    final label = _launchdLabel(config);
+    final escapedPlistPath = _shellEscape(plistPath);
+    final escapedLogDir = _shellEscape(_effectiveServiceLogDir(config));
 
     if (!await _hasUnixRootPrivileges()) {
       final result = await _runElevatedShellScript(
         [
-          "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
-          "cat > '$plistPath' <<'EOF'",
+          "launchctl bootout 'system/$label' >/dev/null 2>&1 || true",
+          'mkdir -p $escapedLogDir',
+          'cat > $escapedPlistPath <<\'EOF\'',
           _makeLaunchdPlist(config),
           'EOF',
-          "chmod 644 '$plistPath'",
-          "chown root:wheel '$plistPath'",
-          "launchctl bootstrap system '$plistPath'",
+          'chmod 644 $escapedPlistPath',
+          'chown root:wheel $escapedPlistPath',
+          'launchctl bootstrap system $escapedPlistPath',
         ].join('\n'),
       );
       if (result.exitCode != 0) {
@@ -1373,12 +1387,10 @@ class EasyTierManager {
           : 'Service updated';
     }
 
-    if (status == ManagedServiceStatus.running) {
-      await _run('launchctl', [
-        'bootout',
-        'system/${_launchdLabel(config)}',
-      ], allowPrivilegeRetry: true);
-    }
+    await _run('launchctl', [
+      'bootout',
+      'system/$label',
+    ], allowPrivilegeRetry: true);
 
     await plist.writeAsString(_makeLaunchdPlist(config));
     await _run('chmod', ['644', plistPath], allowPrivilegeRetry: true);
@@ -1405,12 +1417,14 @@ class EasyTierManager {
     final plistPath = _launchdPlistPath(config);
     final plist = File(plistPath);
     final status = await _getLaunchdServiceStatus(config);
+    final label = _launchdLabel(config);
+    final escapedPlistPath = _shellEscape(plistPath);
 
     if (!await _hasUnixRootPrivileges()) {
       final result = await _runElevatedShellScript(
         [
-          "launchctl bootout 'system/${_launchdLabel(config)}' >/dev/null 2>&1 || true",
-          "rm -f '$plistPath'",
+          "launchctl bootout 'system/$label' >/dev/null 2>&1 || true",
+          'rm -f $escapedPlistPath',
         ].join('\n'),
       );
       if (result.exitCode != 0) {
@@ -1425,7 +1439,7 @@ class EasyTierManager {
     if (status != ManagedServiceStatus.notInstalled) {
       await _run('launchctl', [
         'bootout',
-        'system/${_launchdLabel(config)}',
+        'system/$label',
       ], allowPrivilegeRetry: true);
     } else if (!await plist.exists()) {
       return 'Service is not installed';
@@ -1456,23 +1470,35 @@ class EasyTierManager {
       return 'Service started';
     }
 
-    final bootstrap = await _run('launchctl', [
-      'bootstrap',
-      'system',
-      plistPath,
-    ], allowPrivilegeRetry: true);
-    if (bootstrap.exitCode != 0) {
-      return _errorMessage(bootstrap, fallback: 'failed to start service');
+    if (await _isLaunchdServiceLoaded(config)) {
+      final kick = await _run('launchctl', [
+        'kickstart',
+        '-k',
+        'system/$label',
+      ], allowPrivilegeRetry: true);
+      if (kick.exitCode != 0) {
+        return _errorMessage(kick, fallback: 'failed to start service');
+      }
+    } else {
+      final bootstrap = await _run('launchctl', [
+        'bootstrap',
+        'system',
+        plistPath,
+      ], allowPrivilegeRetry: true);
+      if (bootstrap.exitCode != 0) {
+        return _errorMessage(bootstrap, fallback: 'failed to start service');
+      }
     }
     return 'Service started';
   }
 
   Future<String> _stopLaunchdService(NetworkConfig config) async {
+    final plist = File(_launchdPlistPath(config));
     final status = await _getLaunchdServiceStatus(config);
-    if (status == ManagedServiceStatus.notInstalled) {
+    if (status == ManagedServiceStatus.notInstalled && !await plist.exists()) {
       return 'Service is not installed';
     }
-    if (status == ManagedServiceStatus.stopped) {
+    if (!await _isLaunchdServiceLoaded(config)) {
       return 'Service is already stopped';
     }
 
@@ -1497,6 +1523,10 @@ class EasyTierManager {
       coreBinaryPath!,
       ..._effectiveServiceCliArgs(config),
     ].map((arg) => '    <string>${_xmlEscape(arg)}</string>').join('\n');
+    final stdoutPath =
+        '${_effectiveServiceLogDir(config)}${Platform.pathSeparator}launchd.out.log';
+    final stderrPath =
+        '${_effectiveServiceLogDir(config)}${Platform.pathSeparator}launchd.err.log';
 
     return [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -1512,6 +1542,16 @@ class EasyTierManager {
       '  </array>',
       '  <key>WorkingDirectory</key>',
       '  <string>${_xmlEscape(_configDir)}</string>',
+      '  <key>EnvironmentVariables</key>',
+      '  <dict>',
+      '    <key>PATH</key>',
+      '    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:'
+          '/usr/sbin:/sbin</string>',
+      '  </dict>',
+      '  <key>StandardOutPath</key>',
+      '  <string>${_xmlEscape(stdoutPath)}</string>',
+      '  <key>StandardErrorPath</key>',
+      '  <string>${_xmlEscape(stderrPath)}</string>',
       '  <key>KeepAlive</key>',
       '  <dict>',
       '    <key>Crashed</key>',

@@ -761,10 +761,25 @@ class AppState extends ChangeNotifier {
         _manager.getStats(config.rpcPort),
       ]);
 
-      inst.nodeInfo = results[0] as NodeInfo?;
+      final nodeInfo = results[0] as NodeInfo?;
+      inst.nodeInfo = nodeInfo;
       inst.routes = results[1] as List<PeerRouteInfo>;
       inst.peerConns = results[2] as List<PeerConnInfo>;
       inst.metrics = results[3] as List<MetricSnapshot>;
+      if (nodeInfo == null) {
+        final nextError =
+            'Unable to connect to easytier-core RPC at 127.0.0.1:${config.rpcPort}';
+        if (inst.errorMessage != nextError) {
+          addLog(
+            AppLogLevel.warning,
+            'RPC is not ready for ${config.displayName}',
+            category: 'RPC',
+            detail: nextError,
+          );
+        }
+        inst.errorMessage = nextError;
+        return true;
+      }
       inst.errorMessage = null;
       return true;
     } catch (e) {

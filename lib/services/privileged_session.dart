@@ -132,6 +132,12 @@ class PrivilegedSession {
     final sessionFile =
         File('${tempDir.path}${Platform.pathSeparator}session.json');
     final token = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    final helperArgs = [
+      '--privileged-helper',
+      '--session-file=${sessionFile.path}',
+      '--session-token=$token',
+      '--parent-pid=$pid',
+    ];
 
     try {
       if (Platform.isWindows) {
@@ -144,11 +150,7 @@ class PrivilegedSession {
             '-Command',
             _windowsLaunchCommand(
               Platform.resolvedExecutable,
-              [
-                '--privileged-helper',
-                '--session-file=${sessionFile.path}',
-                '--session-token=$token',
-              ],
+              helperArgs,
             ),
           ],
         );
@@ -161,9 +163,7 @@ class PrivilegedSession {
         final command = [
           'nohup',
           _shellEscape(Platform.resolvedExecutable),
-          _shellEscape('--privileged-helper'),
-          _shellEscape('--session-file=${sessionFile.path}'),
-          _shellEscape('--session-token=$token'),
+          ...helperArgs.map(_shellEscape),
           '>/dev/null',
           '2>&1',
           '&',
@@ -183,10 +183,9 @@ class PrivilegedSession {
         }
       } else if (Platform.isMacOS) {
         final command = [
+          'nohup',
           _shellEscape(Platform.resolvedExecutable),
-          _shellEscape('--privileged-helper'),
-          _shellEscape('--session-file=${sessionFile.path}'),
-          _shellEscape('--session-token=$token'),
+          ...helperArgs.map(_shellEscape),
           '>/dev/null',
           '2>&1',
           '&',
@@ -207,19 +206,27 @@ class PrivilegedSession {
         return 'Unsupported platform for privilege escalation';
       }
 
+      Object? lastReadError;
       for (int i = 0; i < 100; i++) {
         if (await sessionFile.exists()) {
-          final decoded =
-              jsonDecode(await sessionFile.readAsString()) as Map<String, dynamic>;
-          _port = decoded['port'] as int?;
-          _token = decoded['token'] as String?;
-          if (await _ping()) {
-            return null;
+          try {
+            final raw = (await sessionFile.readAsString()).trim();
+            if (raw.isNotEmpty) {
+              final decoded = jsonDecode(raw) as Map<String, dynamic>;
+              _port = decoded['port'] as int?;
+              _token = decoded['token'] as String?;
+              if (_token == token && await _ping()) {
+                return null;
+              }
+            }
+          } catch (e) {
+            lastReadError = e;
           }
         }
         await Future.delayed(const Duration(milliseconds: 150));
       }
-      return 'Timed out waiting for elevated helper';
+      final detail = lastReadError == null ? '' : ': $lastReadError';
+      return 'Timed out waiting for elevated helper$detail';
     } catch (e) {
       return 'Failed to launch elevated helper: $e';
     } finally {
@@ -260,11 +267,16 @@ class PrivilegedSession {
       socket.writeln(payload);
       await socket.flush();
       final raw = await _readSocketLine(socket);
+      if (raw.trim().isEmpty) {
+        throw StateError('Privileged helper closed without a response');
+      }
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       if (decoded['ok'] == true) {
         return decoded;
       }
-      throw StateError(decoded['error']?.toString() ?? 'Privileged helper failed');
+      throw StateError(
+        decoded['error']?.toString() ?? 'Privileged helper failed',
+      );
     } finally {
       await socket.close();
     }
@@ -278,6 +290,7 @@ class PrivilegedSession {
   static Future<int> runHelper(List<String> args) async {
     final sessionFile = _argValue(args, '--session-file=');
     final token = _argValue(args, '--session-token=');
+    final parentPid = int.tryParse(_argValue(args, '--parent-pid=') ?? '');
     if (sessionFile == null || token == null) {
       stderr.writeln('Missing helper bootstrap arguments');
       return 2;
@@ -285,6 +298,38 @@ class PrivilegedSession {
 
     final tracked = <String, Process>{};
     final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    var shuttingDown = false;
+
+    Future<void> stopTrackedProcesses() async {
+      for (final process in tracked.values.toList()) {
+        await _terminateProcess(process);
+      }
+      tracked.clear();
+    }
+
+    Future<void> shutdownHelper() async {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      await stopTrackedProcesses();
+      await server.close();
+    }
+
+    Timer? parentMonitor;
+    var checkingParent = false;
+    if (parentPid != null && parentPid > 0) {
+      parentMonitor = Timer.periodic(const Duration(seconds: 2), (_) async {
+        if (checkingParent || shuttingDown) return;
+        checkingParent = true;
+        try {
+          if (!await _isProcessAlive(parentPid)) {
+            parentMonitor?.cancel();
+            await shutdownHelper();
+          }
+        } finally {
+          checkingParent = false;
+        }
+      });
+    }
 
     Future<Map<String, dynamic>> handle(Map<String, dynamic> request) async {
       if (request['token'] != token) {
@@ -311,7 +356,10 @@ class PrivilegedSession {
           };
         case 'run_shell':
           if (Platform.isWindows) {
-            return {'ok': false, 'error': 'Shell scripts are unsupported on Windows'};
+            return {
+              'ok': false,
+              'error': 'Shell scripts are unsupported on Windows',
+            };
           }
           final result = await _runProcessDecoded(
             '/bin/bash',
@@ -357,13 +405,7 @@ class PrivilegedSession {
           if (process == null) {
             return {'ok': true, 'exitCode': 0, 'stdout': '', 'stderr': ''};
           }
-          try {
-            process.kill(ProcessSignal.sigterm);
-            await process.exitCode.timeout(const Duration(seconds: 3));
-          } on TimeoutException {
-            process.kill(ProcessSignal.sigkill);
-            await process.exitCode.timeout(const Duration(seconds: 3));
-          } catch (_) {}
+          await _terminateProcess(process);
           return {'ok': true, 'exitCode': 0, 'stdout': '', 'stderr': ''};
         case 'is_tracked_process_running':
           final key = request['key'] as String? ?? '';
@@ -372,44 +414,97 @@ class PrivilegedSession {
             'running': tracked.containsKey(key),
           };
         case 'shutdown':
-          for (final process in tracked.values.toList()) {
-            try {
-              process.kill(ProcessSignal.sigterm);
-            } catch (_) {}
-          }
-          unawaited(server.close());
+          unawaited(shutdownHelper());
           return {'ok': true};
         default:
           return {'ok': false, 'error': 'Unsupported operation: $op'};
       }
     }
 
-    await File(sessionFile).writeAsString(
-      jsonEncode({
+    await _writeJsonFileAtomically(
+      File(sessionFile),
+      {
         'port': server.port,
         'token': token,
-      }),
+      },
     );
 
-    await for (final socket in server) {
-      unawaited(() async {
-        try {
-          final raw = await _readSocketLine(socket);
-          final request =
-              raw.trim().isEmpty ? <String, dynamic>{} : jsonDecode(raw) as Map<String, dynamic>;
-          final response = await handle(request);
-          socket.writeln(jsonEncode(response));
-          await socket.flush();
-        } catch (e) {
-          socket.writeln(jsonEncode({'ok': false, 'error': e.toString()}));
-          await socket.flush();
-        } finally {
-          await socket.close();
-        }
-      }());
+    try {
+      await for (final socket in server) {
+        unawaited(() async {
+          try {
+            final raw = await _readSocketLine(socket);
+            final request = raw.trim().isEmpty
+                ? <String, dynamic>{}
+                : jsonDecode(raw) as Map<String, dynamic>;
+            final response = await handle(request);
+            socket.writeln(jsonEncode(response));
+            await socket.flush();
+          } catch (e) {
+            socket.writeln(jsonEncode({'ok': false, 'error': e.toString()}));
+            await socket.flush();
+          } finally {
+            await socket.close();
+          }
+        }());
+      }
+    } finally {
+      parentMonitor?.cancel();
+      await stopTrackedProcesses();
     }
 
     return 0;
+  }
+}
+
+Future<void> _writeJsonFileAtomically(
+  File target,
+  Map<String, dynamic> payload,
+) async {
+  final temp = File('${target.path}.tmp');
+  await temp.writeAsString(jsonEncode(payload), flush: true);
+  if (await target.exists()) {
+    await target.delete();
+  }
+  await temp.rename(target.path);
+}
+
+Future<void> _terminateProcess(Process process) async {
+  try {
+    process.kill(ProcessSignal.sigterm);
+    await process.exitCode.timeout(const Duration(seconds: 3));
+    return;
+  } on TimeoutException {
+    try {
+      process.kill(ProcessSignal.sigkill);
+      await process.exitCode.timeout(const Duration(seconds: 3));
+    } catch (_) {}
+  } catch (_) {}
+}
+
+Future<bool> _isProcessAlive(int targetPid) async {
+  if (targetPid <= 0) return false;
+  if (targetPid == pid) return true;
+
+  try {
+    if (Platform.isWindows) {
+      final result = await _runProcessDecoded('tasklist', [
+        '/FI',
+        'PID eq $targetPid',
+        '/FO',
+        'CSV',
+        '/NH',
+      ]);
+      final output = result.stdout.toString();
+      return result.exitCode == 0 &&
+          output.contains('"$targetPid"') &&
+          !output.toLowerCase().contains('no tasks are running');
+    }
+
+    final result = await _runProcessDecoded('/bin/kill', ['-0', '$targetPid']);
+    return result.exitCode == 0;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -427,7 +522,9 @@ Future<String> _readSocketLine(Socket socket) async {
     if (end > 0 && buffer[end - 1] == 0x0D) {
       end -= 1;
     }
-    completer.complete(utf8.decode(buffer.sublist(0, end), allowMalformed: true));
+    completer.complete(
+      utf8.decode(buffer.sublist(0, end), allowMalformed: true),
+    );
     unawaited(sub?.cancel());
   }
 
@@ -525,7 +622,8 @@ String _windowsLaunchCommand(String executable, List<String> args) {
   final quotedArgs = args
       .map((arg) => "'${arg.replaceAll("'", "''")}'")
       .join(', ');
-  return "Start-Process '$quotedExe' -Verb RunAs -WindowStyle Hidden -ArgumentList @($quotedArgs)";
+  return "Start-Process '$quotedExe' -Verb RunAs -WindowStyle Hidden "
+      '-ArgumentList @($quotedArgs)';
 }
 
 String _shellEscape(String value) {
