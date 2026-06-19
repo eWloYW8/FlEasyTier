@@ -25,7 +25,7 @@ jobs:
             yy_thunks: false
             flutter_version: "3.38.4"
           - platform: windows
-            os: windows-latest
+            os: windows-2022
             arch: amd64
             artifact_suffix: windows-amd64-win7
             yy_thunks: true
@@ -94,6 +94,13 @@ jobs:
             pkg-config \
             protobuf-compiler
 
+      - name: Setup Recent Protobuf Compiler
+        if: matrix.platform == 'linux' || matrix.platform == 'android'
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.3"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup Java
         if: matrix.platform == 'android'
         uses: actions/setup-java@v4
@@ -112,7 +119,15 @@ jobs:
 
       - name: Install Windows Dependencies
         if: matrix.platform == 'windows'
+        shell: pwsh
         run: choco install protoc -y
+
+      - name: Install Visual Studio 2019 Build Tools For Win7 Build
+        if: matrix.platform == 'windows' && matrix.yy_thunks == true
+        shell: pwsh
+        run: |
+          choco install visualstudio2019buildtools -y --package-parameters `
+            "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
