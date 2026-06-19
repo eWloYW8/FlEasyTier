@@ -1334,7 +1334,7 @@ class EasyTierManager {
 
     final label = _launchdLabel(config);
     final result = await _run('launchctl', ['print', 'system/$label']);
-    if (result.exitCode != 0) {
+    if (result.exitCode != 0 || _isLaunchdServiceMissing(result)) {
       return ManagedServiceStatus.stopped;
     }
 
@@ -1347,12 +1347,33 @@ class EasyTierManager {
 
   Future<bool> _isLaunchdServiceLoaded(NetworkConfig config) async {
     final label = _launchdLabel(config);
-    final result = await _run(
-      'launchctl',
-      ['print', 'system/$label'],
-      allowPrivilegeRetry: true,
-    );
-    return result.exitCode == 0;
+    final result = await _run('launchctl', ['print', 'system/$label']);
+    return result.exitCode == 0 && !_isLaunchdServiceMissing(result);
+  }
+
+  bool _isLaunchdServiceMissing(ProcessResult result) {
+    final output = _mergedOutput(result).toLowerCase();
+    return output.contains('could not find service') ||
+        output.contains('could not find domain') ||
+        output.contains('service is not loaded') ||
+        output.contains('service not found') ||
+        output.contains('no such process');
+  }
+
+  Future<ProcessResult> _bootoutLaunchdService(NetworkConfig config) async {
+    final result = await _run('launchctl', [
+      'bootout',
+      'system/${_launchdLabel(config)}',
+    ], allowPrivilegeRetry: true);
+    if (result.exitCode == 0 || _isLaunchdServiceMissing(result)) {
+      return ProcessResult(
+        result.pid,
+        0,
+        result.stdout,
+        result.stderr,
+      );
+    }
+    return result;
   }
 
   Future<String> _installLaunchdService(NetworkConfig config) async {
@@ -1387,10 +1408,13 @@ class EasyTierManager {
           : 'Service updated';
     }
 
-    await _run('launchctl', [
-      'bootout',
-      'system/$label',
-    ], allowPrivilegeRetry: true);
+    final bootout = await _bootoutLaunchdService(config);
+    if (bootout.exitCode != 0) {
+      return _errorMessage(
+        bootout,
+        fallback: 'failed to unload existing launchd service',
+      );
+    }
 
     await plist.writeAsString(_makeLaunchdPlist(config));
     await _run('chmod', ['644', plistPath], allowPrivilegeRetry: true);
@@ -1437,10 +1461,13 @@ class EasyTierManager {
     }
 
     if (status != ManagedServiceStatus.notInstalled) {
-      await _run('launchctl', [
-        'bootout',
-        'system/$label',
-      ], allowPrivilegeRetry: true);
+      final bootout = await _bootoutLaunchdService(config);
+      if (bootout.exitCode != 0) {
+        return _errorMessage(
+          bootout,
+          fallback: 'failed to unload launchd service',
+        );
+      }
     } else if (!await plist.exists()) {
       return 'Service is not installed';
     }
@@ -1457,19 +1484,6 @@ class EasyTierManager {
     if (!await plist.exists()) return 'Service is not installed';
 
     final label = _launchdLabel(config);
-    final status = await _getLaunchdServiceStatus(config);
-    if (status == ManagedServiceStatus.running) {
-      final kick = await _run('launchctl', [
-        'kickstart',
-        '-k',
-        'system/$label',
-      ], allowPrivilegeRetry: true);
-      if (kick.exitCode != 0) {
-        return _errorMessage(kick, fallback: 'failed to restart service');
-      }
-      return 'Service started';
-    }
-
     if (await _isLaunchdServiceLoaded(config)) {
       final kick = await _run('launchctl', [
         'kickstart',
@@ -1477,15 +1491,29 @@ class EasyTierManager {
         'system/$label',
       ], allowPrivilegeRetry: true);
       if (kick.exitCode != 0) {
-        return _errorMessage(kick, fallback: 'failed to start service');
+        if (!_isLaunchdServiceMissing(kick)) {
+          return _errorMessage(kick, fallback: 'failed to start service');
+        }
+      } else {
+        return 'Service started';
       }
-    } else {
-      final bootstrap = await _run('launchctl', [
-        'bootstrap',
-        'system',
-        plistPath,
+    }
+
+    final bootstrap = await _run('launchctl', [
+      'bootstrap',
+      'system',
+      plistPath,
+    ], allowPrivilegeRetry: true);
+    if (bootstrap.exitCode != 0) {
+      final kick = await _run('launchctl', [
+        'kickstart',
+        '-k',
+        'system/$label',
       ], allowPrivilegeRetry: true);
-      if (bootstrap.exitCode != 0) {
+      if (kick.exitCode == 0) return 'Service started';
+      if (_isLaunchdServiceMissing(bootstrap)) {
+        return _errorMessage(kick, fallback: 'failed to start service');
+      } else {
         return _errorMessage(bootstrap, fallback: 'failed to start service');
       }
     }
@@ -1502,10 +1530,7 @@ class EasyTierManager {
       return 'Service is already stopped';
     }
 
-    final result = await _run('launchctl', [
-      'bootout',
-      'system/${_launchdLabel(config)}',
-    ], allowPrivilegeRetry: true);
+    final result = await _bootoutLaunchdService(config);
     if (result.exitCode != 0) {
       return _errorMessage(result, fallback: 'failed to stop service');
     }

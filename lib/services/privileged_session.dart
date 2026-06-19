@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 class PrivilegedSession {
+  static const Duration _requestTimeout = Duration(seconds: 45);
+
   int? _port;
   String? _token;
   Future<String?>? _startup;
@@ -31,18 +33,27 @@ class PrivilegedSession {
     if (error != null) {
       return ProcessResult(0, 1, '', error);
     }
-    final response = await _send({
-      'op': 'run_process',
-      'command': command,
-      'args': args,
-      'cwd': workingDirectory,
-    });
-    return ProcessResult(
-      0,
-      response['exitCode'] as int? ?? 1,
-      response['stdout'] ?? '',
-      response['stderr'] ?? '',
-    );
+    try {
+      final response = await _send({
+        'op': 'run_process',
+        'command': command,
+        'args': args,
+        'cwd': workingDirectory,
+      });
+      return ProcessResult(
+        0,
+        response['exitCode'] as int? ?? 1,
+        response['stdout'] ?? '',
+        response['stderr'] ?? '',
+      );
+    } catch (e) {
+      return ProcessResult(
+        0,
+        1,
+        '',
+        'Privileged helper request failed: $e',
+      );
+    }
   }
 
   Future<ProcessResult> runShell(
@@ -53,17 +64,26 @@ class PrivilegedSession {
     if (error != null) {
       return ProcessResult(0, 1, '', error);
     }
-    final response = await _send({
-      'op': 'run_shell',
-      'script': script,
-      'cwd': workingDirectory,
-    });
-    return ProcessResult(
-      0,
-      response['exitCode'] as int? ?? 1,
-      response['stdout'] ?? '',
-      response['stderr'] ?? '',
-    );
+    try {
+      final response = await _send({
+        'op': 'run_shell',
+        'script': script,
+        'cwd': workingDirectory,
+      });
+      return ProcessResult(
+        0,
+        response['exitCode'] as int? ?? 1,
+        response['stdout'] ?? '',
+        response['stderr'] ?? '',
+      );
+    } catch (e) {
+      return ProcessResult(
+        0,
+        1,
+        '',
+        'Privileged helper request failed: $e',
+      );
+    }
   }
 
   Future<PrivilegedTrackedStartResult> startTrackedProcess({
@@ -76,14 +96,20 @@ class PrivilegedSession {
     if (error != null) {
       return PrivilegedTrackedStartResult(error: error);
     }
-    final response = await _send({
-      'op': 'start_tracked_process',
-      'key': key,
-      'command': command,
-      'args': args,
-      'cwd': workingDirectory,
-    });
-    return PrivilegedTrackedStartResult(pid: response['pid'] as int? ?? 0);
+    try {
+      final response = await _send({
+        'op': 'start_tracked_process',
+        'key': key,
+        'command': command,
+        'args': args,
+        'cwd': workingDirectory,
+      });
+      return PrivilegedTrackedStartResult(pid: response['pid'] as int? ?? 0);
+    } catch (e) {
+      return PrivilegedTrackedStartResult(
+        error: 'Privileged helper request failed: $e',
+      );
+    }
   }
 
   Future<ProcessResult> stopTrackedProcess(String key) async {
@@ -91,16 +117,25 @@ class PrivilegedSession {
     if (error != null) {
       return ProcessResult(0, 1, '', error);
     }
-    final response = await _send({
-      'op': 'stop_tracked_process',
-      'key': key,
-    });
-    return ProcessResult(
-      0,
-      response['exitCode'] as int? ?? 0,
-      response['stdout'] ?? '',
-      response['stderr'] ?? '',
-    );
+    try {
+      final response = await _send({
+        'op': 'stop_tracked_process',
+        'key': key,
+      });
+      return ProcessResult(
+        0,
+        response['exitCode'] as int? ?? 0,
+        response['stdout'] ?? '',
+        response['stderr'] ?? '',
+      );
+    } catch (e) {
+      return ProcessResult(
+        0,
+        1,
+        '',
+        'Privileged helper request failed: $e',
+      );
+    }
   }
 
   Future<bool> isTrackedProcessRunning(String key) async {
@@ -128,9 +163,14 @@ class PrivilegedSession {
   Future<String?> _ensureStartedImpl() async {
     if (await _ping()) return null;
 
-    final tempDir = await Directory.systemTemp.createTemp('fleasytier-helper-');
+    final tempDir = await _createHelperTempDir();
     final sessionFile =
         File('${tempDir.path}${Platform.pathSeparator}session.json');
+    final pidFile = File('${tempDir.path}${Platform.pathSeparator}helper.pid');
+    final logFile =
+        File('${tempDir.path}${Platform.pathSeparator}helper-launch.log');
+    final launcherFile =
+        File('${tempDir.path}${Platform.pathSeparator}start-helper.sh');
     final token = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
     final helperArgs = [
       '--privileged-helper',
@@ -182,32 +222,31 @@ class PrivilegedSession {
           );
         }
       } else if (Platform.isMacOS) {
-        final command = [
-          'nohup',
-          _shellEscape(Platform.resolvedExecutable),
-          ...helperArgs.map(_shellEscape),
-          '>/dev/null',
-          '2>&1',
-          '&',
-        ].join(' ');
-        final result = await _runProcessDecoded(
-          'osascript',
-          [
-            '-e',
-            'do shell script "${_appleScriptEscape(command)}" with administrator privileges',
-          ],
+        await _writeMacOSHelperLauncher(
+          launcherFile: launcherFile,
+          logFile: logFile,
+          pidFile: pidFile,
+          executable: Platform.resolvedExecutable,
+          args: helperArgs,
         );
+        final result = await _launchMacOSHelper(launcherFile);
         if (result.exitCode != 0) {
-          return _mergeOutput(result).ifEmpty(
-            'Failed to launch elevated helper',
-          );
+          final output = _mergeOutput(result);
+          final launchLog = await _readTextIfExists(logFile);
+          return [
+            output.ifEmpty('Failed to launch elevated helper'),
+            if (launchLog.trim().isNotEmpty)
+              'Helper launch log:\n${launchLog.trim()}',
+          ].join('\n');
         }
       } else {
         return 'Unsupported platform for privilege escalation';
       }
 
       Object? lastReadError;
-      for (int i = 0; i < 100; i++) {
+      int? helperPid;
+      for (int i = 0; i < 160; i++) {
+        helperPid ??= await _readPidIfExists(pidFile);
         if (await sessionFile.exists()) {
           try {
             final raw = (await sessionFile.readAsString()).trim();
@@ -216,6 +255,9 @@ class PrivilegedSession {
               _port = decoded['port'] as int?;
               _token = decoded['token'] as String?;
               if (_token == token && await _ping()) {
+                try {
+                  await tempDir.delete(recursive: true);
+                } catch (_) {}
                 return null;
               }
             }
@@ -223,17 +265,112 @@ class PrivilegedSession {
             lastReadError = e;
           }
         }
+        if (helperPid != null &&
+            !await _isProcessAlive(helperPid, allowPermissionDenied: true)) {
+          return _helperStartupFailure(
+            'Elevated helper exited before it became ready',
+            logFile: logFile,
+            pidFile: pidFile,
+            lastReadError: lastReadError,
+          );
+        }
         await Future.delayed(const Duration(milliseconds: 150));
       }
-      final detail = lastReadError == null ? '' : ': $lastReadError';
-      return 'Timed out waiting for elevated helper$detail';
+      return _helperStartupFailure(
+        'Timed out waiting for elevated helper',
+        logFile: logFile,
+        pidFile: pidFile,
+        lastReadError: lastReadError,
+      );
     } catch (e) {
       return 'Failed to launch elevated helper: $e';
-    } finally {
-      try {
-        await tempDir.delete(recursive: true);
-      } catch (_) {}
     }
+  }
+
+  Future<Directory> _createHelperTempDir() async {
+    final base = Platform.isMacOS
+        ? Directory('/tmp')
+        : Directory.systemTemp;
+    final dir = await base.createTemp('fleasytier-helper-');
+    try {
+      await Process.run('chmod', ['700', dir.path]);
+    } catch (_) {}
+    return dir;
+  }
+
+  Future<void> _writeMacOSHelperLauncher({
+    required File launcherFile,
+    required File logFile,
+    required File pidFile,
+    required String executable,
+    required List<String> args,
+  }) async {
+    final invocation = [
+      _shellEscape(executable),
+      ...args.map(_shellEscape),
+    ].join(' ');
+    final script = [
+      '#!/bin/sh',
+      'LOG=${_shellEscape(logFile.path)}',
+      'PIDFILE=${_shellEscape(pidFile.path)}',
+      'EXE=${_shellEscape(executable)}',
+      'umask 022',
+      '{',
+      '  echo "[\$(date -u +%Y-%m-%dT%H:%M:%SZ)] launcher uid=\$(id -u) euid=\$(id -u)"',
+      '  echo "executable=\$EXE"',
+      '  /bin/ls -l "\$EXE"',
+      '  if [ ! -x "\$EXE" ]; then',
+      '    echo "executable is not runnable"',
+      '    exit 126',
+      '  fi',
+      '  trap "" HUP',
+      '  $invocation </dev/null >> "\$LOG" 2>&1 &',
+      '  helper_pid=\$!',
+      '  echo "\$helper_pid" > "\$PIDFILE"',
+      '  chmod 644 "\$PIDFILE" "\$LOG" 2>/dev/null || true',
+      '  echo "started helper pid=\$helper_pid"',
+      '  sleep 0.2',
+      '  if kill -0 "\$helper_pid" 2>/dev/null; then',
+      '    echo "helper pid \$helper_pid is alive after launch"',
+      '  else',
+      '    echo "helper pid \$helper_pid exited immediately"',
+      '  fi',
+      '} >> "\$LOG" 2>&1',
+      'exit 0',
+      '',
+    ].join('\n');
+    await launcherFile.writeAsString(script, flush: true);
+    try {
+      await Process.run('chmod', ['700', launcherFile.path]);
+    } catch (_) {}
+  }
+
+  Future<ProcessResult> _launchMacOSHelper(File launcherFile) {
+    final command = '/bin/sh ${_shellEscape(launcherFile.path)}';
+    return _runProcessDecoded(
+      'osascript',
+      [
+        '-e',
+        'do shell script "${_appleScriptEscape(command)}" with administrator privileges',
+      ],
+    );
+  }
+
+  Future<String> _helperStartupFailure(
+    String message, {
+    required File logFile,
+    required File pidFile,
+    Object? lastReadError,
+  }) async {
+    final pid = await _readTextIfExists(pidFile);
+    final launchLog = await _readTextIfExists(logFile);
+    return [
+      if (lastReadError != null) '$message: $lastReadError' else message,
+      if (pid.trim().isNotEmpty) 'Helper pid: ${pid.trim()}',
+      'Helper work dir: ${logFile.parent.path}',
+      if (launchLog.trim().isNotEmpty)
+        'Helper launch log:\n${launchLog.trim()}',
+    ].join('\n');
   }
 
   Future<bool> _ping() async {
@@ -266,7 +403,7 @@ class PrivilegedSession {
       });
       socket.writeln(payload);
       await socket.flush();
-      final raw = await _readSocketLine(socket);
+      final raw = await _readSocketLine(socket).timeout(_requestTimeout);
       if (raw.trim().isEmpty) {
         throw StateError('Privileged helper closed without a response');
       }
@@ -295,9 +432,15 @@ class PrivilegedSession {
       stderr.writeln('Missing helper bootstrap arguments');
       return 2;
     }
+    stderr.writeln(
+      'Privileged helper bootstrap pid=$pid sessionFile=$sessionFile',
+    );
 
     final tracked = <String, Process>{};
     final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    stderr.writeln(
+      'Privileged helper listening on 127.0.0.1:${server.port}',
+    );
     var shuttingDown = false;
 
     Future<void> stopTrackedProcesses() async {
@@ -469,6 +612,21 @@ Future<void> _writeJsonFileAtomically(
   await temp.rename(target.path);
 }
 
+Future<int?> _readPidIfExists(File file) async {
+  final raw = await _readTextIfExists(file);
+  if (raw.trim().isEmpty) return null;
+  return int.tryParse(raw.trim());
+}
+
+Future<String> _readTextIfExists(File file) async {
+  try {
+    if (!await file.exists()) return '';
+    return await file.readAsString();
+  } catch (_) {
+    return '';
+  }
+}
+
 Future<void> _terminateProcess(Process process) async {
   try {
     process.kill(ProcessSignal.sigterm);
@@ -482,7 +640,10 @@ Future<void> _terminateProcess(Process process) async {
   } catch (_) {}
 }
 
-Future<bool> _isProcessAlive(int targetPid) async {
+Future<bool> _isProcessAlive(
+  int targetPid, {
+  bool allowPermissionDenied = false,
+}) async {
   if (targetPid <= 0) return false;
   if (targetPid == pid) return true;
 
@@ -502,7 +663,11 @@ Future<bool> _isProcessAlive(int targetPid) async {
     }
 
     final result = await _runProcessDecoded('/bin/kill', ['-0', '$targetPid']);
-    return result.exitCode == 0;
+    if (result.exitCode == 0) return true;
+    if (!allowPermissionDenied) return false;
+    final output = _mergeOutput(result).toLowerCase();
+    return output.contains('operation not permitted') ||
+        output.contains('not permitted');
   } catch (_) {
     return false;
   }
