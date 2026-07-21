@@ -13,7 +13,7 @@ $targetMap = @{
   'x86_64' = 'x86_64-linux-android'
 }
 
-$androidTargets = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
+$androidTargets = @('arm64-v8a', 'armeabi-v7a', 'x86_64')
 if ($env:FLEASYTIER_ANDROID_ABIS) {
   $androidTargets = $env:FLEASYTIER_ANDROID_ABIS.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 }

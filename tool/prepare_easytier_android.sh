@@ -14,7 +14,7 @@ declare -A TARGET_MAP=(
   ["x86_64"]="x86_64-linux-android"
 )
 
-IFS=',' read -r -a ANDROID_TARGETS <<< "${FLEASYTIER_ANDROID_ABIS:-arm64-v8a,armeabi-v7a,x86,x86_64}"
+IFS=',' read -r -a ANDROID_TARGETS <<< "${FLEASYTIER_ANDROID_ABIS:-arm64-v8a,armeabi-v7a,x86_64}"
 
 if ! command -v cargo >/dev/null 2>&1; then
   echo "cargo is required to build EasyTier Android JNI/FFI libraries" >&2
